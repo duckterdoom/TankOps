@@ -1,0 +1,19 @@
+# Maven target
+target/
+**/target/
+*.jar
+*.war
+*.class
+
+# IDE files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# Database & Logs
+*.db
+*.log
+downloads/
