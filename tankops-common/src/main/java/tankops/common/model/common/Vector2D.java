@@ -1,4 +1,4 @@
-package tankops.common.model;
+package tankops.common.model.common;
 
 
 public record Vector2D(double x, double y) {

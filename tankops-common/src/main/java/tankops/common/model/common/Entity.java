@@ -1,4 +1,4 @@
-package tankops.common.model;
+package tankops.common.model.common;
 
 import java.util.Objects;
 
