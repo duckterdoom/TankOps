@@ -1,19 +1,17 @@
 package tankops.common.model;
 
+import java.util.Objects;
+
+
 public class PowerUp extends Entity {
+    public static final int POINTS = 500; // điểm nhận khi nhặt
+
     private final PowerUpType type;
-    private double lifetime; // Thời gian tồn tại trên màn hình (vd: 10-15s trước khi tự biến mất)
 
     public PowerUp(String id, Vector2D position, PowerUpType type) {
-        super(id, position, 32.0, 32.0);
-        this.type = type;
-        this.lifetime = 12.0;
+        super(id, position, Environment.TILE_SIZE, Environment.TILE_SIZE);
+        this.type = Objects.requireNonNull(type, "type");
     }
 
     public PowerUpType getType() { return type; }
-    public double getLifetime() { return lifetime; }
-    public void updateLifetime(double deltaTime) { this.lifetime -= deltaTime; }
-    public boolean isExpired() { return lifetime <= 0; }
-
-
 }
