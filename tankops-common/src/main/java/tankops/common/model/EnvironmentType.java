@@ -1,26 +1,39 @@
 package tankops.common.model;
 
 public enum EnvironmentType {
-    BRICK_WALL(false, false, true, 4),   // [canTankPass, canBulletPass, isDestructible, defaultDurability]
-    STEEL_WALL(false, false, true, 2),   // Chỉ bị phá bởi đạn Tier 4
-    TREES(true, true, false, 0),         // Che phủ xe tăng & đạn
-    WATER(false, true, false, 0),        // Xe không qua được, đạn bay qua được
-    ICE(true, true, false, 0);           // Xe đi qua bị trượt
+    //             tankPassable, bulletPassable, destructible, durability, normalDmg, maxTierDmg
+    BRICK_WALL(false, false, true,  4, 1, 2),
+    STEEL_WALL(false, false, true,  2, 0, 1),
+    TREES     (true,  true,  false, 0, 0, 0),
+    WATER     (false, true,  false, 0, 0, 0),
+    ICE       (true,  true,  false, 0, 0, 0);
 
-    private final boolean canTankPass;
-    private final boolean canBulletPass;
-    private final boolean isDestructible;
-    private final int defaultDurability;
+    public static final int MAX_STAR_LEVEL = 3; // star 3 = Tier 4
 
-    EnvironmentType(boolean canTankPass, boolean canBulletPass, boolean isDestructible, int defaultDurability) {
-        this.canTankPass = canTankPass;
-        this.canBulletPass = canBulletPass;
-        this.isDestructible = isDestructible;
-        this.defaultDurability = defaultDurability;
+    private final boolean tankPassable;
+    private final boolean bulletPassable;
+    private final boolean destructible;
+    private final int durability;
+    private final int normalDamage;
+    private final int maxTierDamage;
+
+    EnvironmentType(boolean tankPassable, boolean bulletPassable, boolean destructible,
+                    int durability, int normalDamage, int maxTierDamage) {
+        this.tankPassable = tankPassable;
+        this.bulletPassable = bulletPassable;
+        this.destructible = destructible;
+        this.durability = durability;
+        this.normalDamage = normalDamage;
+        this.maxTierDamage = maxTierDamage;
     }
 
-    public boolean isCanTankPass() { return canTankPass; }
-    public boolean isCanBulletPass() { return canBulletPass; }
-    public boolean isDestructible() { return isDestructible; }
-    public int getDefaultDurability() { return defaultDurability; }
+    public boolean isTankPassable()   { return tankPassable; }
+    public boolean isBulletPassable() { return bulletPassable; }
+    public boolean isDestructible()   { return destructible; }
+    public int getDefaultDurability() { return durability; }
+
+    public int damageFrom(int bulletStarLevel) {
+        if (!destructible) return 0;
+        return bulletStarLevel >= MAX_STAR_LEVEL ? maxTierDamage : normalDamage;
+    }
 }

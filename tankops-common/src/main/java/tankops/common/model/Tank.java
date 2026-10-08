@@ -1,37 +1,69 @@
 package tankops.common.model;
 
-public abstract class Tank extends Entity {
-    protected Direction direction;
-    protected double speed;
-    protected double bulletSpeed;
-    protected int hp;
-    protected int maxHp;
-    protected boolean alive;
+import java.util.Objects;
 
-    public Tank(String id, Vector2D position, Direction direction, double speed, double bulletSpeed, int hp) {
-        super(id, position, 32.0, 32.0); // Kích thước xe tăng chuẩn 32x32px
-        this.direction = direction;
+public abstract class Tank extends Entity {
+    public static final double SIZE = Environment.TILE_SIZE;
+
+    // 3 mức tốc độ di chuyển theo đề: Slow / Normal / Fast
+    public static final double MOVE_SLOW = 80.0;
+    public static final double MOVE_NORMAL = 120.0;
+    public static final double MOVE_FAST = 160.0;
+
+    private final double speed;
+    private final int maxHp;
+    private int hp;
+    private Direction direction;
+    private double shieldTimeLeft; // giây; > 0 nghĩa là đang có khiên (Helmet)
+
+    protected Tank(String id, Vector2D position, Direction direction, double speed, int maxHp) {
+        super(id, position, SIZE, SIZE);
+        this.direction = Objects.requireNonNull(direction, "direction");
         this.speed = speed;
-        this.bulletSpeed = bulletSpeed;
-        this.hp = hp;
-        this.maxHp = hp;
-        this.alive = true;
+        this.maxHp = maxHp;
+        this.hp = maxHp;
     }
 
+
+    public abstract double getBulletSpeed();
+
+
+    public int getMaxActiveBullets() { return 1; }
+
+
+    public int getBulletStarLevel()  { return 0; }
+
+
+    public int getBulletDamage()     { return 1; }
+
     public Direction getDirection() { return direction; }
-    public void setDirection(Direction direction) { this.direction = direction; }
-    public double getSpeed() { return speed; }
-    public double getBulletSpeed() { return bulletSpeed; }
-    public int getHp() { return hp; }
-    public int getMaxHp() { return maxHp; }
-    public boolean isAlive() { return alive; }
+    public double getSpeed()        { return speed; }
+    public int getHp()              { return hp; }
+    public int getMaxHp()           { return maxHp; }
+    public boolean isAlive()        { return hp > 0; }
+
+    public void setDirection(Direction direction) {
+        this.direction = Objects.requireNonNull(direction, "direction");
+    }
 
     public void takeDamage(int damage) {
-        if (!alive) return;
-        this.hp -= damage;
-        if (this.hp <= 0) {
-            this.hp = 0;
-            this.alive = false;
-        }
+        if (!isAlive() || isShielded() || damage <= 0) return;
+        hp = Math.max(0, hp - damage);
+    }
+
+    public void respawn(Vector2D spawnPoint) {
+        hp = maxHp;
+        setPosition(spawnPoint);
+    }
+
+    // ---- Khiên (Helmet, và khiên đầu mỗi màn) ----
+    public boolean isShielded() { return shieldTimeLeft > 0; }
+
+    public void activateShield(double seconds) {
+        shieldTimeLeft = Math.max(shieldTimeLeft, seconds);
+    }
+
+    public void updateShield(double deltaSeconds) {
+        shieldTimeLeft = Math.max(0, shieldTimeLeft - deltaSeconds);
     }
 }
