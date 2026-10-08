@@ -1,4 +1,4 @@
-package com.tankops.server;
+package tankops.server.net;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,8 +30,8 @@ public class GameServer {
         props.load(in);
         in.close();
 
-        port = Integer.parseInt(props.getProperty("server.port", "5000"));
-        maxClients = Integer.parseInt(props.getProperty("server.max-clients", "100"));
+        port = Integer.parseInt(props.getProperty("server.port", "5555"));
+        maxClients = Integer.parseInt(props.getProperty("server.maxClients", "100"));
     }
 
     // Mở cổng và bật thread chuyên nhận kết nối mới

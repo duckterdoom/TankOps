@@ -1,4 +1,4 @@
-package com.tankops.server;
+package tankops.server.net;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -23,6 +23,7 @@ public class ClientSession implements Runnable {
     @Override
     public void run() {
         try {
+            socket.setTcpNoDelay(true); // gửi gói nhỏ ngay, không chờ gộp
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
             PrintWriter out = new PrintWriter(socket.getOutputStream(), true); // true = tự flush
 

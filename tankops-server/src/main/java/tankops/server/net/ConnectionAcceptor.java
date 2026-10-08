@@ -1,4 +1,4 @@
-package com.tankops.server;
+package tankops.server.net;
 
 import java.io.IOException;
 import java.net.ServerSocket;
