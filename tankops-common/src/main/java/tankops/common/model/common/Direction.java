@@ -1,8 +1,8 @@
-package tankops.common.model;
+package tankops.common.model.common;
 
 
 public enum Direction {
-    // declare 4 singleton constants for 4 dirs
+
     UP(0, -1),
     DOWN(0, 1),
     LEFT(-1, 0),
