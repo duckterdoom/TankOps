@@ -1,6 +1,6 @@
 param(
     [string]$ServerHost = "localhost",
-    [int]$Port = 5000
+    [int]$Port = 5555
 )
 
 $client = New-Object System.Net.Sockets.TcpClient($ServerHost, $Port)
