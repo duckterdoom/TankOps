@@ -17,7 +17,7 @@ import java.util.Optional;
 public class MapLoader {
     private static final String EMPTY_TOKEN = ".";
 
-    public List<Environment> loadMap(String resourcePath) {
+    public GameMap loadMap(String resourcePath) {
         try (InputStream is = MapLoader.class.getResourceAsStream(resourcePath)) {
             if (is == null) {
                 throw new IllegalArgumentException("Map not found: " + resourcePath);
@@ -28,8 +28,12 @@ public class MapLoader {
         }
     }
 
-    public List<Environment> parse(Reader source) throws IOException {
+    public GameMap parse(Reader source) throws IOException {
         List<Environment> environments = new ArrayList<>();
+        List<Vector2D> playerSpawnPoints = new ArrayList<>();
+        List<Vector2D> enemySpawnPoints = new ArrayList<>();
+
+
         BufferedReader reader = new BufferedReader(source);
 
         String line;
@@ -50,25 +54,38 @@ public class MapLoader {
                         col * Environment.TILE_SIZE,
                         row * Environment.TILE_SIZE
                 );
+
+                if(token.equals("P")){
+                    playerSpawnPoints.add(position);
+                    continue;
+                }
+                if(token.equals("E")){
+                    enemySpawnPoints.add(position);
+                    continue;
+                }
                 String id = "env_" + row + "_" + col;
 
-                Optional<Environment> env = createEnvironment(token, id, position, lineNumber);
-                env.ifPresent(environments::add);
+                Environment env = createEnvironment(token, id, position, lineNumber);
+                if (env != null) {
+                    environments.add(env);
+                }
             }
             row++;
         }
-        return environments;
+        return new GameMap(environments, playerSpawnPoints, enemySpawnPoints);
     }
 
-    private Optional<Environment> createEnvironment(String token, String id, Vector2D position, int lineNumber) {
-        return switch (token.toUpperCase()) {
-            case "B" -> Optional.of(new BrickWall(id, position));
-            case "S" -> Optional.of(new SteelWall(id, position));
-            case "T" -> Optional.of(new Trees(id, position));
-            case "W" -> Optional.of(new Water(id, position));
-            case "I" -> Optional.of(new Ice(id, position));
-            default  -> throw new IllegalArgumentException(
-                    "Unknown tile '" + token + "' at line " + lineNumber);
+    private Environment createEnvironment(String token, String id, Vector2D position, int lineNumber) {
+        return switch (token) {
+            case "B" -> new BrickWall(id, position);
+            case "S" -> new SteelWall(id, position);
+            case "T" -> new Trees(id, position);
+            case "W" -> new Water(id, position);
+            case "I" -> new Ice(id, position);
+            default -> {
+                System.out.println("Unknown title " + token + " at line " + lineNumber);
+                yield null;
+            }
         };
     }
 }
