@@ -6,6 +6,7 @@ import tankops.common.model.common.Direction;
 import tankops.common.model.common.Entity;
 import tankops.common.model.common.Vector2D;
 
+
 public abstract class Tank extends Entity {
     public static final double TANK_SIZE = 32.0;
     public static final double MOVE_SLOW = 1.0;
@@ -49,6 +50,13 @@ public abstract class Tank extends Entity {
                 getPosition().y() + direction.getDy() * offset
         );
         return new Bullet(bulletId, getId(), spawnPos, direction, getBulletSpeed(), 1, getBulletStarLevel());
+    }
+
+    public void move(Direction newDirection){
+        this.direction = newDirection;
+        Vector2D newPos = getPosition().add(newDirection.toVector().multiply(moveSpeed)) ;
+        setPosition(newPos);
+
     }
 
     public boolean isSliding() {
