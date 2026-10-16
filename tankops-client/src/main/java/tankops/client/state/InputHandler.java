@@ -23,6 +23,13 @@ public class InputHandler {
         keyBinding(inputMap, actionMap, "S", "move_down", () -> down = true, () -> down = false);
         keyBinding(inputMap, actionMap, "A", "move_left", () -> left = true, () -> left = false);
         keyBinding(inputMap, actionMap, "D", "move_right", () -> right = true, () -> right = false);
+
+        keyBinding(inputMap, actionMap, "UP", "move_up", () -> up = true, () -> up = false);
+        keyBinding(inputMap, actionMap, "DOWN", "move_down", () -> down = true, () -> down = false);
+        keyBinding(inputMap, actionMap, "LEFT", "move_left", () -> left = true, () -> left = false);
+        keyBinding(inputMap, actionMap, "RIGHT", "move_right", () -> right = true, () -> right = false);
+
+        keyBinding(inputMap, actionMap, "SPACE", "SHOOT", () -> isShooting = true, () -> isShooting = false);
     }
 
     private void keyBinding(InputMap im, ActionMap am, String key, String name, Runnable onPress, Runnable onRelease) {

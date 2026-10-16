@@ -17,6 +17,9 @@ public class GamePanel extends JPanel {
 
     public GamePanel(MainFrame mainFrame) {
         setDoubleBuffered(true);
+        setFocusable(true);
+        requestFocusInWindow();
+
         this.inputHandler = new InputHandler(this);
 
         getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("ESCAPE"), "endGame");
@@ -40,6 +43,6 @@ public class GamePanel extends JPanel {
         Graphics2D g2d = (Graphics2D) g;
 
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        renderer.render(g2d, mockState);
+        renderer.render(g2d, mockState, getWidth(), getHeight());
     }
 }
