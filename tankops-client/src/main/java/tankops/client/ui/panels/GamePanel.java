@@ -1,40 +1,62 @@
 package tankops.client.ui.panels;
 
+import tankops.client.controller.SinglePlayerController;
 import tankops.client.state.InputHandler;
-import tankops.client.state.MockGameState;
 import tankops.client.ui.MainFrame;
-import tankops.client.ui.ScreenState;
 import tankops.client.ui.render.GameRenderer;
+import tankops.common.engine.GameState;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 
 public class GamePanel extends JPanel {
-    private final MockGameState mockState = new MockGameState();
-    private final GameRenderer renderer = new GameRenderer();
+    private final MainFrame mainFrame;
+    private final GameRenderer renderer;
     private final InputHandler inputHandler;
+    private final SinglePlayerController controller;
+
+    private Timer gameLoopTimer;
 
     public GamePanel(MainFrame mainFrame) {
+        this.mainFrame = mainFrame;
+        this.renderer = new GameRenderer() ;
+        this.controller = new SinglePlayerController();
+
         setDoubleBuffered(true);
         setFocusable(true);
-        requestFocusInWindow();
+        setBackground(new Color(15, 15, 18));
 
         this.inputHandler = new InputHandler(this);
 
-        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("ESCAPE"), "endGame");
-        getActionMap().put("endGame", new AbstractAction() {
+        addMouseListener(new MouseAdapter() {
             @Override
-            public void actionPerformed(ActionEvent e) {
-                mainFrame.showScreen(ScreenState.RESULTS);
+            public void mousePressed(MouseEvent e) {
+                requestFocusInWindow();
             }
         });
 
-        Timer gameLoop = new Timer(16, e -> {
-            mockState.update(inputHandler);
+        controller.initGame();
+
+        setupGameLoop();
+    }
+
+    private void setupGameLoop() {
+        gameLoopTimer = new Timer(16, e -> {
+            controller.handleInput(
+                    inputHandler.isUp(),
+                    inputHandler.isDown(),
+                    inputHandler.isLeft(),
+                    inputHandler.isRight(),
+                    inputHandler.isShooting()
+            );
+
+            controller.update();
+
             repaint();
         });
-        gameLoop.start();
+        gameLoopTimer.start();
     }
 
     @Override
@@ -42,7 +64,16 @@ public class GamePanel extends JPanel {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g;
 
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        renderer.render(g2d, mockState, getWidth(), getHeight());
+        GameState gameState = controller.getGameState();
+
+        if (gameState != null) {
+            renderer.render(g2d, gameState, controller.getLocalPlayerId(), getWidth(), getHeight());
+        }
+    }
+
+    public void stopGameLoop() {
+        if (gameLoopTimer != null && gameLoopTimer.isRunning()) {
+            gameLoopTimer.stop();
+        }
     }
 }
