@@ -16,5 +16,15 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
         </dependency>
+
+
+
+        <dependency>
+            <groupId>tankops</groupId>
+            <artifactId>tankops-common</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
     </dependencies>
+
 </project>
