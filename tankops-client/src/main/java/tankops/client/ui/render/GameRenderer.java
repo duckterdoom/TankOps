@@ -86,9 +86,7 @@ public class GameRenderer {
 
             boolean isLocalPlayer = tank.getId().equals(localPlayerId);
 
-            //int frame = tank.isMoving() ? animFrame : 0;
-            // Vì Tank chưa có flag isMoving hay logic slide, tạm thời dùng animFrame khi vẽ
-            int frame = animFrame;
+            int frame = tank.isMoving() ? animFrame : 0;
 
             BufferedImage tankSprite;
             Color fallbackColor;
@@ -106,8 +104,8 @@ public class GameRenderer {
     }
 
     private void drawTank(Graphics2D g2d, double x, double y, BufferedImage tankSprite, Color fallbackColor, int health, int maxHealth) {
-        int drawX = (int) x - (TANK_SIZE /2);
-        int drawY = (int) y - (TANK_SIZE /2);
+        int drawX = (int) x;
+        int drawY = (int) y;
 
         if (tankSprite != null) {
             g2d.drawImage(tankSprite, drawX, drawY, TANK_SIZE, TANK_SIZE, null);
@@ -119,7 +117,7 @@ public class GameRenderer {
         if (health > 0 && maxHealth > 0) {
             int barWidth = TANK_SIZE;
             int barHeight = 4;
-            int barX = (int) x - (barWidth / 2);
+            int barX = drawX;
             int barY = drawY - 6;
 
             int currentHpWidth = (int) (barWidth * ((double) health / maxHealth));
