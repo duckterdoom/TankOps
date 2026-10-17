@@ -85,14 +85,21 @@ public class GameEngine {
         updatePlayerTanks();
     }
     private void updatePlayerTanks() {
+        for(Tank tank : this.gameState.getTanks()){
+            tank.setMoving(false);
+        }
         playerMoveDirections.forEach((playerId, direction) -> {
             Tank tank = this.gameState.getTankById(playerId);
             if (tank != null && !tank.isDestroyed()) {
-                Vector2D oldPosition = tank.getPosition();
+//                Vector2D oldPosition = tank.getPosition();
+                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                //when moving if detect collision then rollback pos
                 tank.move(direction); // update both dir and pos
 
                 if(checkWallCollision(tank)){
                     tank.setPosition(oldPosition);
+                }else {
+                    tank.setMoving(true);
                 }
             }
         });
