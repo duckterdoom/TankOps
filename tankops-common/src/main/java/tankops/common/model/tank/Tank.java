@@ -18,6 +18,8 @@ public abstract class Tank extends Entity {
     private int health;
     private final int maxHealth;
 
+    private boolean isMoving = false;
+
     private double slideDistanceRemaining = 0.0;
     public Tank(String id, Vector2D position, Direction direction, double moveSpeed, int maxHealth) {
         super(id, position, TANK_SIZE, TANK_SIZE);
@@ -33,6 +35,8 @@ public abstract class Tank extends Entity {
     public int getHealth() { return health; }
     public void setHealth(int health) { this.health = health; }
     public int getMaxHealth() { return maxHealth; }
+    public boolean isMoving(){return isMoving;}
+    public void setMoving(boolean moving) { this.isMoving = moving; }
 
     public void takeDamage(int amount) {
         this.health = Math.max(0, this.health - amount);
@@ -44,10 +48,12 @@ public abstract class Tank extends Entity {
     public abstract int getBulletStarLevel();
 
     public Bullet fire(String bulletId) {
+        double centerX = getPosition().x() + TANK_SIZE / 2.0;
+        double centerY = getPosition().y() + TANK_SIZE / 2.0;
         double offset = 16.0;
         Vector2D spawnPos = new Vector2D(
-                getPosition().x() + direction.getDx() * offset,
-                getPosition().y() + direction.getDy() * offset
+                centerX + direction.getDx() * offset - (Bullet.SIZE / 2.0),
+                centerY  + direction.getDy() * offset - (Bullet.SIZE / 2.0)
         );
         return new Bullet(bulletId, getId(), spawnPos, direction, getBulletSpeed(), 1, getBulletStarLevel());
     }
