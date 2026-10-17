@@ -37,7 +37,7 @@ public class SpriteManager {
         loadTile("eagle_alive");
         loadTile("eagle_destroyed");
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 2; i++) {
             loadTile("water_f" + i);
         }
 
