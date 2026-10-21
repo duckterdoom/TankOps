@@ -45,6 +45,10 @@ public class RoomManager {
         return new ArrayList<>(rooms.values());
     }
 
+    public synchronized GameRoom getRoom(String roomId) {
+        return rooms.get(roomId);
+    }
+
     public synchronized void joinRoom(String roomId, ClientSession player) throws RoomFullException {
         GameRoom room = rooms.get(roomId);
         if (room == null) {

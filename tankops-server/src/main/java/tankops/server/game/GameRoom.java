@@ -9,8 +9,15 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import tankops.common.engine.GameEngine;
 import tankops.common.engine.GameState;
 import tankops.common.map.GameMap;
+import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
+import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
+import tankops.common.net.Message;
+import tankops.common.net.game.BulletSnapshot;
+import tankops.common.net.game.GameOverMessage;
+import tankops.common.net.game.SnapshotMessage;
+import tankops.common.net.game.TankSnapshot;
 import tankops.server.net.ClientSession;
 
 /**
@@ -66,10 +73,14 @@ public class GameRoom {
             throw new RoomFullException("Phòng " + id + " đã đầy (" + maxPlayers + " người)");
         }
         players.add(player);
+        player.setCurrentRoom(this);
     }
 
     public synchronized void removePlayer(ClientSession player) {
         players.remove(player);
+        if (player.getCurrentRoom() == this) {
+            player.setCurrentRoom(null);
+        }
 
         if (state == RoomState.PLAYING) {
             if (players.isEmpty()) {
@@ -194,6 +205,7 @@ public class GameRoom {
             return;
         }
 
+        broadcast(buildBinarySnapshot());
         broadcast(buildSnapshot());
     }
 
@@ -217,6 +229,7 @@ public class GameRoom {
     /** PLAYING -> FINISHED. Chạy trên thread tick. */
     private void finishGame() {
         String message;
+        GameOverMessage gameOverMsg;
         synchronized (this) {
             if (state != RoomState.PLAYING) {
                 return;
@@ -228,7 +241,9 @@ public class GameRoom {
                 tickLoop = null;
             }
             message = buildGameOverMessage();
+            gameOverMsg = new GameOverMessage(winnerId, getScores());
         }
+        broadcast(gameOverMsg);
         broadcast(message); // gửi mạng NGOÀI khóa
     }
 
@@ -264,6 +279,64 @@ public class GameRoom {
                     .append(",").append((int) t.getPosition().y());
         }
         return sb.toString();
+    }
+
+    public SnapshotMessage buildBinarySnapshot() {
+        GameState gameState = engine.getGameState();
+        List<TankSnapshot> tankSnapshots = new ArrayList<>();
+        for (Tank t : gameState.getTanks()) {
+            int starLevel = 0;
+            boolean shielded = false;
+            if (t instanceof PlayerTank pt) {
+                starLevel = pt.getStarLevel();
+                shielded = pt.isShielded();
+            }
+            tankSnapshots.add(new TankSnapshot(
+                    t.getId(),
+                    t.getPosition().x(),
+                    t.getPosition().y(),
+                    t.getDirection(),
+                    Math.max(1, t.getHealth()),
+                    Math.max(1, t.getMaxHealth()),
+                    starLevel,
+                    shielded,
+                    t.isMoving(),
+                    t.isDestroyed()
+            ));
+        }
+
+        List<BulletSnapshot> bulletSnapshots = new ArrayList<>();
+        for (Bullet b : gameState.getBullets()) {
+            bulletSnapshots.add(new BulletSnapshot(
+                    b.getId(),
+                    b.getOwnerId(),
+                    b.getPosition().x(),
+                    b.getPosition().y(),
+                    b.getDirection()
+            ));
+        }
+
+        return new SnapshotMessage(
+                tickCount,
+                tankSnapshots,
+                bulletSnapshots,
+                state == RoomState.FINISHED,
+                winnerId
+        );
+    }
+
+    public void broadcast(Message message) {
+        List<ClientSession> copy;
+        synchronized (this) {
+            copy = new ArrayList<>(players);
+        }
+        for (ClientSession p : copy) {
+            try {
+                p.send(message);
+            } catch (Exception e) {
+                System.out.println("[GameRoom] Không gửi được message cho " + p.getPlayerId());
+            }
+        }
     }
 
     private void broadcast(String message) {
