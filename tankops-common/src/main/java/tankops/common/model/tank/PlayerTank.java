@@ -6,7 +6,7 @@ import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 
 public class PlayerTank extends Tank {
-    private static final int INITIAL_LIVES = 3;
+    private static final int INITIAL_LIVES = 1;
     private static final int EXTRA_LIFE_SCORE = 20_000;
 
     private final int playerNumber;
@@ -16,9 +16,12 @@ public class PlayerTank extends Tank {
     private boolean scoreLifeGranted = false;
     private boolean shielded = false;
 
+    private final Vector2D spawnPoint;
+
     public PlayerTank(String id, Vector2D position, Direction direction, int playerNumber) {
         super(id, position, direction, MOVE_NORMAL, 1);
         this.playerNumber = playerNumber;
+        this.spawnPoint = position;
     }
 
     public int getPlayerNumber() { return playerNumber; }
@@ -34,6 +37,24 @@ public class PlayerTank extends Tank {
     public void takeDamage(int amount) {
         if (shielded) return;
         super.takeDamage(amount);
+
+        if(getHealth() <= 0){
+            loseLife();
+            resetPowerLevel();
+
+            if(lives > 0 ){
+                respawn();
+            }
+        }
+    }
+
+    public void respawn(){
+        setHealth(getMaxHealth());
+        setPosition(spawnPoint);
+    }
+    @Override
+    public boolean isDestroyed() {
+        return lives <= 0 && getHealth() <= 0;
     }
 
     @Override

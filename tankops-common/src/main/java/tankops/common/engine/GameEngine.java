@@ -1,11 +1,13 @@
 package tankops.common.engine;
 
 import tankops.common.map.GameMap;
+import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
 import tankops.common.model.tank.*;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -89,10 +91,33 @@ public class GameEngine {
             playerMoveDirections.put(playerId, direction);
         }
     }
+
+
+    public void handleShootEvent(String playerId) {
+        if (playerId == null || playerId.isBlank()) {
+            return;
+        }
+
+        Tank tank = this.gameState.getTankById(playerId);
+
+        // check whether tank is destroyed or not
+        if (tank != null && !tank.isDestroyed()) {
+            //create bulletId based on playerId
+            String bulletId = playerId + "_b_" + System.currentTimeMillis();
+
+            //create bullet
+            Bullet bullet = tank.fire(bulletId);
+
+            // add bullet to game state
+            this.gameState.addBullet(bullet);
+        }
+    }
     //update game state per tick
     public void update(){
 
         updatePlayerTanks();
+        updateBullets();
+        cleanupDestroyedTanks();
     }
     private void updatePlayerTanks() {
         for(Tank tank : this.gameState.getTanks()){
@@ -114,6 +139,31 @@ public class GameEngine {
             }
         });
     }
+    private void updateBullets(){
+        Iterator<Bullet> iterator = this.gameState.getBullets().iterator();
+
+        while (iterator.hasNext()) {
+            Bullet bullet = iterator.next();
+
+
+            bullet.move();
+
+            if (!bullet.isWithinBounds(mapWidth, mapHeight)) {
+                iterator.remove();
+                continue;
+            }
+
+            if(checkBulletWallCollision(bullet)){
+                iterator.remove();
+                continue;
+            }
+
+            if(checkBulletTankCollision(bullet)){
+                iterator.remove();
+            }
+        }
+
+    }
 
     private boolean checkWallCollision(Tank tank){
         for(Environment env : this.gameState.getEnvironments()){
@@ -126,6 +176,62 @@ public class GameEngine {
 
     }
 
+    private boolean checkBulletWallCollision(Bullet bullet){
+        Iterator<Environment> iterator = this.gameState.getEnvironments().iterator();
+
+        while (iterator.hasNext()) {
+            Environment env = iterator.next();
+
+            // Bỏ qua nếu môi trường cho đạn đi xuyên qua (cỏ, nước...)
+            if (env.canBulletPass()) {
+                continue;
+            }
+
+            // Nếu chạm vào tường cản đạn
+            if (bullet.intersects(env)) {
+                env.takeHit(bullet.getStarLevel());
+
+                // Nếu tường bị phá hủy hoàn toàn -> Xóa khỏi GameState an toàn bằng Iterator
+                if (env.isDestroyed()) {
+                    iterator.remove();
+                }
+
+                return true; // Trả về true để xóa đạn
+            }
+        }
+
+        return false;
+    }
+
+    private boolean checkBulletTankCollision(Bullet bullet) {
+        for (Tank tank : this.gameState.getTanks()) {
+            // Bỏ qua xe tăng đã bị tiêu diệt hoặc chính xe tăng đã bắn ra viên đạn này
+            if (tank.isDestroyed() || tank.getId().equals(bullet.getOwnerId())) {
+                continue;
+            }
+
+            // Nếu đạn chạm vào xe tăng
+            if (bullet.intersects(tank)) {
+                // Xe tăng chịu sát thương từ đạn
+                tank.takeDamage(bullet.getDamage());
+                if (tank.isDestroyed()) {
+
+                }
+                return true; // Trả về true để xóa đạn
+            }
+        }
+        return false;
+    }
+
+    private void cleanupDestroyedTanks() {
+        Iterator<Tank> iterator = this.gameState.getTanks().iterator();
+        while (iterator.hasNext()) {
+            Tank tank = iterator.next();
+            if (tank.isDestroyed()) {
+                iterator.remove(); // Xóa tank đã chết khỏi GameState
+            }
+        }
+    }
 
     //get current game state
     public GameState getGameState() {
