@@ -70,6 +70,17 @@ public class GameServer {
         return sessions.size() >= maxClients;
     }
 
+    public synchronized int getSessionCount() {
+        return sessions.size();
+    }
+
+    public int getMaxClients() {
+        return maxClients;
+    }
+//getSessionCount có synchronized vì danh sách sessions bị nhiều thread đụng vào.
+// getMaxClients thì không cần, vì giá trị chỉ được gán một lần lúc khởi động và không đổi nữa.
+
+
     public static void main(String[] args) throws IOException {
         GameServer server = new GameServer();
         server.start();
