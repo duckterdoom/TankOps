@@ -39,6 +39,7 @@ public class MapLoader {
         String line;
         int lineNumber = 0;
         int row = 0;
+        int maxCols = 0;
 
         while ((line = reader.readLine()) != null) {
             lineNumber++;
@@ -46,6 +47,9 @@ public class MapLoader {
             if (line.isEmpty() || line.startsWith("#")) continue;
 
             String[] tokens = line.split("\\s+");
+            if(tokens.length > maxCols) {
+                maxCols = tokens.length;
+            }
             for (int col = 0; col < tokens.length; col++) {
                 String token = tokens[col];
                 if (EMPTY_TOKEN.equals(token)) continue;
@@ -72,7 +76,7 @@ public class MapLoader {
             }
             row++;
         }
-        return new GameMap(environments, playerSpawnPoints, enemySpawnPoints);
+        return new GameMap(environments, playerSpawnPoints, enemySpawnPoints, maxCols, row);
     }
 
     private Environment createEnvironment(String token, String id, Vector2D position, int lineNumber) {

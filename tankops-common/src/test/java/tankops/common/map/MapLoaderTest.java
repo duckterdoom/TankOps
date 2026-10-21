@@ -20,7 +20,7 @@ class MapLoaderTest {
 
     @Test
     void testLoadMap_Success() {
-        GameMap map = mapLoader.loadMap("/maps/stage1.map");
+        GameMap map = mapLoader.loadMap("/maps/map_multi.map");
 
         assertNotNull(map);
         assertNotNull(map.getEnvironments());
@@ -33,7 +33,7 @@ class MapLoaderTest {
 
     @Test
     void testLoadMap_SpawnPoints() {
-        GameMap map = mapLoader.loadMap("/maps/stage1.map");
+        GameMap map = mapLoader.loadMap("/maps/map_single.map");
 
 
         assertNotNull(map.getPlayerSpawnPoints());
@@ -55,10 +55,34 @@ class MapLoaderTest {
             assertEquals(0.0, spawn.y() % Environment.TILE_SIZE, "Tọa độ Y của Bot Spawn phải là bội số của TILE_SIZE");
         }
     }
+    @Test
+    void testLoadMap_SpawnPointsWithoutBot() {
+        GameMap map = mapLoader.loadMap("/maps/map_multi.map");
+
+
+        assertNotNull(map.getPlayerSpawnPoints());
+        assertNotNull(map.getEnemySpawnPoints());
+
+
+        assertFalse(map.getPlayerSpawnPoints().isEmpty(), "File map phải có điểm spawn cho Player ('P')");
+        assertTrue(map.getEnemySpawnPoints().isEmpty(), "File map khong có điểm spawn cho Bot ('E')");
+
+
+        for (Vector2D spawn : map.getPlayerSpawnPoints()) {
+            assertEquals(0.0, spawn.x() % Environment.TILE_SIZE, "Tọa độ X của Player Spawn phải là bội số của TILE_SIZE");
+            assertEquals(0.0, spawn.y() % Environment.TILE_SIZE, "Tọa độ Y của Player Spawn phải là bội số của TILE_SIZE");
+        }
+
+
+        for (Vector2D spawn : map.getEnemySpawnPoints()) {
+            assertEquals(0.0, spawn.x() % Environment.TILE_SIZE, "Tọa độ X của Bot Spawn phải là bội số của TILE_SIZE");
+            assertEquals(0.0, spawn.y() % Environment.TILE_SIZE, "Tọa độ Y của Bot Spawn phải là bội số của TILE_SIZE");
+        }
+    }
 
     @Test
     void testLoadMap_TileCoordinatesAndUniqueness() {
-        GameMap gameMap = mapLoader.loadMap("/maps/stage1.map");
+        GameMap gameMap = mapLoader.loadMap("/maps/map_multi.map");
         List<Environment> map = gameMap.getEnvironments();
 
         for (Environment env : map) {

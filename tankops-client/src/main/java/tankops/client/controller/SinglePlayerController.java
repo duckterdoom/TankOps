@@ -16,7 +16,7 @@ public class SinglePlayerController {
     public void initGame() {
         try {
             MapLoader mapLoader = new MapLoader();
-            GameMap gameMap = mapLoader.loadMap("/maps/stage1.map");
+            GameMap gameMap = mapLoader.loadMap("/maps/map_single.map");
 
             if (gameMap != null) {
                 engine = new GameEngine(gameMap);

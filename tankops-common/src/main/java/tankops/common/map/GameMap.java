@@ -10,10 +10,16 @@ public class GameMap {
     private final List<Vector2D> playerSpawnPoints;
     private final List<Vector2D> enemySpawnPoints;
 
-    public GameMap(List<Environment> environments, List<Vector2D> playerSpawnPoints, List<Vector2D> enemySpawnPoints) {
+    private final int cols;
+    private final int rows;
+
+    public GameMap(List<Environment> environments, List<Vector2D> playerSpawnPoints, List<Vector2D> enemySpawnPoints,  int cols, int rows) {
         this.environments = environments;
         this.playerSpawnPoints = playerSpawnPoints;
         this.enemySpawnPoints = enemySpawnPoints;
+        this.cols = cols;
+        this.rows = rows;
+
     }
 
     public List<Environment> getEnvironments() {
@@ -26,6 +32,15 @@ public class GameMap {
     public List<Vector2D> getEnemySpawnPoints() {
         return enemySpawnPoints;
 
+
     }
+
+    public int getCols(){
+        return cols;
+    }
+    public int getRows(){
+        return rows;
+    }
+
 
 }
