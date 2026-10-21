@@ -17,12 +17,21 @@ public class GameEngine {
     private final Random random = new Random();
     private final Map<String, Direction> playerMoveDirections = new ConcurrentHashMap<>();
 
+    private double mapWidth = 800.0;
+    private double mapHeight = 600.0;
 
     //Initialize GameEngine with populating environment data from GameMap into GameState
     public GameEngine(GameMap gameMap) {
-        if(gameMap != null && gameMap.getEnvironments() != null){
-            this.gameState.setEnvironments(gameMap.getEnvironments());
+        if(gameMap != null ){
+            if(gameMap.getEnvironments() != null){
+                this.gameState.setEnvironments(gameMap.getEnvironments());
+            }
+            if (gameMap.getCols() > 0 && gameMap.getRows() > 0) {
+                this.mapWidth = gameMap.getCols() * Environment.TILE_SIZE;
+                this.mapHeight = gameMap.getRows() * Environment.TILE_SIZE;
+            }
         }
+
     }
 
     //Spawn player tanks
@@ -31,6 +40,7 @@ public class GameEngine {
             return;
         }
 
+        // Prevents IndexOutOfBoundsException if the number of player ids exceeds available spawn points
         int count = Math.min(playerIds.size(), playerSpawnPoints.size());
 
         for (int i = 0; i < count; i++) {
@@ -96,7 +106,7 @@ public class GameEngine {
                 //when moving if detect collision then rollback pos
                 tank.move(direction); // update both dir and pos
 
-                if(checkWallCollision(tank)){
+                if(!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)){
                     tank.setPosition(oldPosition);
                 }else {
                     tank.setMoving(true);
@@ -120,6 +130,13 @@ public class GameEngine {
     //get current game state
     public GameState getGameState() {
         return this.gameState;
+    }
+
+    public double getMapHeight() {
+        return mapHeight;
+    }
+    public double getMapWidth() {
+        return mapWidth;
     }
 
 

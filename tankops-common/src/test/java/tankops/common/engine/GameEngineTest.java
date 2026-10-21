@@ -46,7 +46,7 @@ class GameEngineTest {
 
     @BeforeEach
     void setUp() {
-        GameMap emptyMap = new GameMap(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+        GameMap emptyMap = new GameMap(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), 25, 19);
 
         gameEngine = new GameEngine(emptyMap);
         gameEngine.spawnPlayers(List.of(playerId), List.of(startPos));
@@ -119,5 +119,36 @@ class GameEngineTest {
         // Vị trí sau nhịp tick thứ 2 giữ nguyên
         assertEquals(posAfterFirstTick.x(), tank.getPosition().x());
         assertEquals(posAfterFirstTick.y(), tank.getPosition().y());
+    }
+
+    @Test
+    @DisplayName("Boundary Check: Xe tăng đứng sát mép biên (X = 0, Y = 0) vẫn được coi là hợp lệ (Boundary Valid)")
+    void testTankValidAtExactCornerBoundary() {
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+
+        // Đặt xe tăng vừa đúng mép trên-trái (0.0, 0.0)
+        tank.setPosition(new Vector2D(0.0, 0.0));
+
+        // Gọi update mà không di chuyển
+        gameEngine.update();
+
+        // Xe tăng vẫn tồn tại và ở nguyên vị trí (0.0, 0.0) mà không bị lỗi
+        assertEquals(0.0, tank.getPosition().x(), "Tọa độ X tại mép 0.0 phải hợp lệ");
+        assertEquals(0.0, tank.getPosition().y(), "Tọa độ Y tại mép 0.0 phải hợp lệ");
+    }
+
+    @Test
+    @DisplayName("Boundary Check: Xe tăng đứng sát mép phải (X = mapWidth - TANK_SIZE) vẫn hợp lệ")
+    void testTankValidAtExactRightBoundary() {
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        double exactRightX = gameEngine.getMapWidth() - Tank.TANK_SIZE;
+        double exactBottomY = gameEngine.getMapHeight() - Tank.TANK_SIZE;
+
+        // Đặt xe tăng vừa khít mép dưới-phải
+        tank.setPosition(new Vector2D(exactRightX, exactBottomY));
+        gameEngine.update();
+
+        assertEquals(exactRightX, tank.getPosition().x(), "Vị trí sát mép phải phải hợp lệ");
+        assertEquals(exactBottomY, tank.getPosition().y(), "Vị trí sát mép dưới phải hợp lệ");
     }
 }

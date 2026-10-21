@@ -8,7 +8,7 @@ import tankops.common.model.common.Vector2D;
 
 
 public abstract class Tank extends Entity {
-    public static final double TANK_SIZE = 32.0;
+    public static final double TANK_SIZE = 28.0;
     public static final double MOVE_SLOW = 1.0;
     public static final double MOVE_NORMAL = 2.0;
     public static final double MOVE_FAST = 3.0;

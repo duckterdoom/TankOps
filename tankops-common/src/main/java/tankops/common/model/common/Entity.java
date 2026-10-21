@@ -34,6 +34,14 @@ public abstract class Entity {
                 && position.y() < o.position.y() + o.height && position.y() + height > o.position.y();
     }
 
+    //check whether obj out of bound or not
+    public boolean isWithinBounds(double mapWidth, double mapHeight) {
+        return position.x() >= 0
+                && position.y() >= 0
+                && (position.x() + width) <= mapWidth
+                && (position.y() + height) <= mapHeight;
+    }
+
     @Override
     public final boolean equals(Object o) {
         return this == o || (o instanceof Entity e && id.equals(e.id));
