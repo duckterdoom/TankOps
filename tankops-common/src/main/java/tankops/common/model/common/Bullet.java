@@ -7,9 +7,9 @@ public class Bullet extends Entity {
     public static final int MAX_STAR_LEVEL = 3;
 
     // 3 mức tốc độ đạn theo đề: Slow / Normal / Fast
-    public static final double SPEED_SLOW = 180.0;
-    public static final double SPEED_NORMAL = 240.0;
-    public static final double SPEED_FAST = 300.0;
+    public static final double SPEED_SLOW = 4.0;
+    public static final double SPEED_NORMAL = 6.0;
+    public static final double SPEED_FAST = 8.0;
 
     public static final double SIZE = 8.0;
 
@@ -27,6 +27,12 @@ public class Bullet extends Entity {
         this.speed = speed;
         this.damage = damage;
         this.starLevel = Math.clamp(starLevel, 0, MAX_STAR_LEVEL);
+    }
+
+    public void move() {
+        double newX = getPosition().x() + direction.getDx() * speed;
+        double newY = getPosition().y() + direction.getDy() * speed;
+        setPosition(new Vector2D(newX, newY));
     }
 
     public String getOwnerId()      { return ownerId; }
