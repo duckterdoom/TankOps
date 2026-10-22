@@ -30,7 +30,7 @@ class GameRoomTickTest {
     @Test
     void startGame_tickCountIncreases() throws Exception {
         GameRoom room = roomWithTwoPlayers();
-        room.startGame(new MapLoader().loadMap("/maps/stage1.map"), 30);
+        room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         try {
             waitUntil(() -> room.getTickCount() >= 10);
             assertTrue(room.getTickCount() >= 10);
@@ -43,7 +43,7 @@ class GameRoomTickTest {
     @Test
     void stopGame_tickStops() throws Exception {
         GameRoom room = roomWithTwoPlayers();
-        room.startGame(new MapLoader().loadMap("/maps/stage1.map"), 30);
+        room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         waitUntil(() -> room.getTickCount() >= 3);
         room.stopGame();
         Thread.sleep(100); // chờ tick đang dở (nếu có) chạy xong
@@ -59,7 +59,7 @@ class GameRoomTickTest {
         ClientSession p = new ClientSession(null, null);
         room.addPlayer(p);
         room.addPlayer(new ClientSession(null, null));
-        room.startGame(new MapLoader().loadMap("/maps/stage1.map"), 30);
+        room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         try {
             Thread[] threads = new Thread[10];
             for (int i = 0; i < threads.length; i++) {

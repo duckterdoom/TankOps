@@ -29,7 +29,7 @@ import tankops.server.net.GameServer;
 class ServerStressTest {
 
     private GameMap map() {
-        return new MapLoader().loadMap("/maps/stage1.map");
+        return new MapLoader().loadMap("/maps/map_multi.map");
     }
 
     private ClientSession fakePlayer() {

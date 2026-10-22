@@ -9,13 +9,14 @@ import org.junit.jupiter.api.Test;
 
 import tankops.common.map.GameMap;
 import tankops.common.map.MapLoader;
+import tankops.common.model.tank.Tank;
 import tankops.server.net.ClientSession;
 
 /** T21: vòng đời phòng LOBBY -> PLAYING -> FINISHED và điểm số. */
 class RoomLifecycleTest {
 
     private GameMap map() {
-        return new MapLoader().loadMap("/maps/stage1.map");
+        return new MapLoader().loadMap("/maps/map_multi.map");
     }
 
     private ClientSession fakePlayer() {
@@ -103,8 +104,10 @@ class RoomLifecycleTest {
         room.addPlayer(b);
         room.startGame(map(), 30);
 
-        // Giả lập xe của b bị hạ (sau này việc này do đạn của M3 làm)
-        room.getEngineForTest().getGameState().getTankById(b.getPlayerId()).setHealth(0);
+        // Giả lập xe của b bị hạ. Phải dùng takeDamage (như đạn thật), vì xe người chơi giờ có "mạng":
+        // chỉ đặt máu = 0 thì xe không bị coi là chết. Sau này đạn của M3 sẽ gây sát thương theo đường này.
+        Tank tankOfB = room.getEngineForTest().getGameState().getTankById(b.getPlayerId());
+        tankOfB.takeDamage(tankOfB.getMaxHealth());
 
         waitUntil(() -> room.getState() == RoomState.FINISHED);
         assertEquals(RoomState.FINISHED, room.getState());
