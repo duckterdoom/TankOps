@@ -5,7 +5,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
-public class InputHandler {
+public class  InputHandler {
     private boolean up, down, left, right;
     private boolean isShooting;
     private int mouseX, mouseY;
@@ -29,7 +29,7 @@ public class InputHandler {
         keyBinding(inputMap, actionMap, "LEFT", "move_left", () -> left = true, () -> left = false);
         keyBinding(inputMap, actionMap, "RIGHT", "move_right", () -> right = true, () -> right = false);
 
-        keyBinding(inputMap, actionMap, "SPACE", "SHOOT", () -> isShooting = true, () -> isShooting = false);
+        keyBinding(inputMap, actionMap, "SPACE", "shoot", () -> isShooting = true, () -> isShooting = false);
     }
 
     private void keyBinding(InputMap im, ActionMap am, String key, String name, Runnable onPress, Runnable onRelease) {

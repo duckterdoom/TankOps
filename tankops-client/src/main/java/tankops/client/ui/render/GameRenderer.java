@@ -13,9 +13,11 @@ import java.awt.image.BufferedImage;
 
 public class GameRenderer {
     private static final int GAME_WIDTH = 800;
-    private static final int GAME_HEIGHT = 576;
+    private static final int GAME_HEIGHT = 608;
     private static final int TILE_SIZE = 32;
-    private static final int TANK_SIZE = 32;
+    private static final int TANK_SIZE = 26;
+
+    private static final int BULLET_SIZE = 4;
 
     private final SpriteManager spriteManager = SpriteManager.getInstance();
 
@@ -116,9 +118,9 @@ public class GameRenderer {
 
         if (health > 0 && maxHealth > 0) {
             int barWidth = TANK_SIZE;
-            int barHeight = 4;
+            int barHeight = 3;
             int barX = drawX;
-            int barY = drawY - 6;
+            int barY = drawY - 5;
 
             int currentHpWidth = (int) (barWidth * ((double) health / maxHealth));
 
@@ -140,11 +142,14 @@ public class GameRenderer {
 
             BufferedImage bulletImg = spriteManager.getSprite("bullet_" + dirStr);
 
+            int drawX = (int) pos.x() - (BULLET_SIZE / 2);
+            int drawY = (int) pos.y() - (BULLET_SIZE / 2);
+
             if (bulletImg != null) {
-                g2d.drawImage(bulletImg, (int) pos.x() - 4, (int) pos.y() - 4, 8, 8, null);
+                g2d.drawImage(bulletImg, drawX, drawY, BULLET_SIZE, BULLET_SIZE, null);
             } else {
                 g2d.setColor(Color.YELLOW);
-                g2d.fillOval((int) pos.x() - 3, (int) pos.y() - 3, 6, 6);
+                g2d.fillOval((int) pos.x() - 1, (int) pos.y() - 1, 3, 3);
             }
         }
     }
