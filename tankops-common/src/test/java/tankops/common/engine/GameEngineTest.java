@@ -8,6 +8,7 @@ import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.Ice;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 
@@ -497,6 +498,49 @@ class GameEngineTest {
         // Player 1 bắn tiếp ngay -> Bị block
         gameEngine.handleShootEvent(playerId);
         assertEquals(2, gameEngine.getGameState().getBullets().size());
+    }
+
+    // =========================================================================
+    // TEST CASES FOR ICE SLIDE LOGIC (TRƯỢT BĂNG)
+    // =========================================================================
+
+    @Test
+    @DisplayName("ICE SLIDE: Xe tăng vọt đi (trượt tức thì) ngay trong nhịp đè phím khi bước vào Băng")
+    void testTankSlidesInstantlyWhileHoldingKeyOnIce() {
+        Ice ice = new Ice("ice_1", new Vector2D(102.0, 100.0));
+        gameEngine.getGameState().getEnvironments().add(ice);
+
+        gameEngine.handleMoveEvent(playerId, Direction.RIGHT);
+        gameEngine.update();
+
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        assertNotNull(tank);
+        assertTrue(tank.isSliding(), "Xe tăng phải bật trạng thái trượt khi di chuyển trên Băng");
+
+        // Quãng đường đi được phải lớn hơn quãng đường di chuyển 1 bước bình thường (moveSpeed) do có thêm bước slideForward
+        double expectedMinX = startPos.x() + tank.getMoveSpeed() + Tank.SLIDE_SPEED;
+        assertTrue(tank.getPosition().x() >= expectedMinX, "Xe tăng phải trượt vọt đi xa hơn bình thường khi giữ phím trên Băng");
+    }
+
+    @Test
+    @DisplayName("ICE SLIDE: Xe tăng tiếp tục trượt về phía trước sau khi nhả phím nếu còn đà trượt")
+    void testTankContinuesSlideAfterKeyReleaseOnIce() {
+        Ice ice = new Ice("ice_1", startPos);
+        gameEngine.getGameState().getEnvironments().add(ice);
+
+        // 1. Nhấn phím RIGHT để tích đà trượt
+        gameEngine.handleMoveEvent(playerId, Direction.RIGHT);
+        gameEngine.update();
+
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        Vector2D posBeforeRelease = tank.getPosition();
+
+        // 2. Nhả phím (direction = null)
+        gameEngine.handleMoveEvent(playerId, null);
+        gameEngine.update();
+
+        // Xe tăng tiếp tục trượt thêm một bước nữa
+        assertTrue(tank.getPosition().x() > posBeforeRelease.x(), "Xe tăng phải tiếp tục trượt về phía trước sau khi nhả phím");
     }
 
 

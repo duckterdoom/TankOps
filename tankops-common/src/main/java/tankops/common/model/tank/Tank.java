@@ -21,6 +21,7 @@ public abstract class Tank extends Entity {
     private boolean isMoving = false;
 
     private double slideDistanceRemaining = 0.0;
+    public static final double SLIDE_SPEED = 4.0;
 
     private long lastShootTime = 0; // Thời điểm bắn gần nhất (ms)
     private long shootCooldownMillis = 500;
@@ -83,19 +84,19 @@ public abstract class Tank extends Entity {
     public void triggerSlide(double distance) {
         this.slideDistanceRemaining = distance;
     }
-    public void slideForward(double deltaTime) {
+    public void slideForward() {
         if (!isSliding()) return;
 
-        double moveStep = getMoveSpeed() * 60.0 * deltaTime; // Tính khoảng di chuyển trong frame
-        double actualStep = Math.min(moveStep, slideDistanceRemaining);
+        // Trượt 1 bước bằng SLIDE_SPEED
+        double step = Math.min(SLIDE_SPEED, slideDistanceRemaining);
 
         // Cập nhật vị trí mới theo hướng hiện tại
-        double newX = getPosition().x() + direction.getDx() * actualStep;
-        double newY = getPosition().y() + direction.getDy() * actualStep;
+        double newX = getPosition().x() + direction.getDx() * step;
+        double newY = getPosition().y() + direction.getDy() * step;
         setPosition(new Vector2D(newX, newY));
 
         // Trừ bớt quãng đường trượt còn lại
-        slideDistanceRemaining -= actualStep;
+        slideDistanceRemaining -= step;
     }
 
     public long getShootCooldownMillis() {
