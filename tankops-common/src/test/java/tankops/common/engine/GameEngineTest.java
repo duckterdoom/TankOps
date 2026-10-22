@@ -347,4 +347,101 @@ class GameEngineTest {
         assertTrue(gameEngine.getGameState().getBullets().isEmpty(), "Đạn sau khi trúng phải bị xóa khỏi GameState");
     }
 
+    // =========================================================================
+    // TEST CASES FOR ON_KILL_CALLBACK & GAME_OVER LOGIC
+    // =========================================================================
+
+    @Test
+    @DisplayName("onKillCallback gửi đúng ID người bắn khi tiêu diệt EnemyTank (Bot)")
+    void testOnKillCallbackTriggersOnEnemyTankDestroyed() {
+        String enemyBotId = "bot_1";
+        Vector2D botPos = new Vector2D(300.0, 300.0);
+        gameEngine.spawnBots(List.of(enemyBotId), List.of(botPos));
+
+        // Tạo danh sách hứng killerId trả về từ callback
+        List<String> killedByList = new ArrayList<>();
+        gameEngine.setOnKillCallback(killedByList::add);
+
+        Tank enemyBot = gameEngine.getGameState().getTankById(enemyBotId);
+        assertNotNull(enemyBot);
+
+        // Bắn viên đạn chí mạng vào Bot
+        Bullet lethalBullet = new Bullet("bullet_fatal_bot", playerId, botPos, Direction.RIGHT, Bullet.SPEED_NORMAL, enemyBot.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(lethalBullet);
+
+        gameEngine.update();
+
+        // Kiểm tra callback đã nhận đúng playerId của người bắn
+        assertEquals(1, killedByList.size(), "Callback phải được gọi đúng 1 lần khi Bot nổ");
+        assertEquals(playerId, killedByList.get(0), "ID của killer truyền sang callback phải là playerId");
+    }
+
+    @Test
+    @DisplayName("onKillCallback vẫn gửi đúng killerId khi PlayerTank bị bắn nổ mất 1 mạng (dù chưa chết hẳn)")
+    void testOnKillCallbackTriggersOnPlayerTankLosesLife() {
+        String enemyPlayerId = "player_2";
+        Vector2D enemyPos = new Vector2D(400.0, 400.0);
+        gameEngine.spawnPlayers(List.of(enemyPlayerId), List.of(enemyPos));
+
+        PlayerTank targetPlayer = (PlayerTank) gameEngine.getGameState().getTankById(enemyPlayerId);
+        assertNotNull(targetPlayer);
+
+        // Thêm mạng để Player 2 có 2 mạng
+        targetPlayer.addLife();
+        assertEquals(2, targetPlayer.getLives());
+
+        List<String> killedByList = new ArrayList<>();
+        gameEngine.setOnKillCallback(killedByList::add);
+
+        // player_1 bắn trúng làm player_2 nổ mất 1 mạng
+        Bullet bullet = new Bullet("bullet_hit_p2", playerId, enemyPos, Direction.RIGHT, Bullet.SPEED_NORMAL, targetPlayer.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(bullet);
+
+        gameEngine.update();
+
+        // Mạng giảm xuống 1
+        assertEquals(1, targetPlayer.getLives());
+        assertFalse(targetPlayer.isDestroyed(), "Player 2 chưa bị tiêu diệt hoàn toàn vì vẫn còn 1 mạng");
+
+        // Callback vẫn phải ghi nhận player_1 đã có 1 lượt hạ gục (kill)
+        assertEquals(1, killedByList.size(), "Callback phải được kích hoạt ngay cả khi chỉ làm đối phương mất 1 mạng");
+        assertEquals(playerId, killedByList.get(0), "Killer ID ghi nhận phải là player_1");
+    }
+
+    @Test
+    @DisplayName("GameState được cập nhật isGameOver = true khi số xe còn sống <= 1")
+    void testGameOverSetToTrueWhenOneOrZeroTanksRemain() {
+        // Ban đầu trong setUp chỉ spawn đúng 1 xe (player_1)
+        assertFalse(gameEngine.getGameState().isGameOver(), "Game chưa over khi vừa khởi tạo");
+
+        // Chạy update tick đầu tiên
+        gameEngine.update();
+
+        // Vì chỉ có 1 xe trên map (aliveCount = 1) -> Game Engine tự nhận biết và setGameOver(true)
+        assertTrue(gameEngine.getGameState().isGameOver(), "GameState phải chuyển isGameOver = true do chỉ còn <= 1 xe sống");
+    }
+
+    @Test
+    @DisplayName("Game không over khi còn >= 2 xe sống, và tự động over khi 1 xe bị tiêu diệt")
+    void testGameOverTriggersOnlyWhenTanksReducedToOne() {
+        String enemyId = "enemy_player";
+        Vector2D enemyPos = new Vector2D(300.0, 300.0);
+        gameEngine.spawnPlayers(List.of(enemyId), List.of(enemyPos));
+
+        Tank enemyTank = gameEngine.getGameState().getTankById(enemyId);
+
+        // Update nhịp tick 1: Trên map đang có 2 xe (player_1 và enemy_player)
+        gameEngine.update();
+        assertFalse(gameEngine.getGameState().isGameOver(), "Game không được over khi vẫn còn 2 xe sống");
+
+        // Bắn nổ hoàn toàn enemy_player
+        Bullet lethalBullet = new Bullet("bullet_fatal", playerId, enemyPos, Direction.RIGHT, Bullet.SPEED_NORMAL, enemyTank.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(lethalBullet);
+
+        // Update nhịp tick 2: enemy_player bị nổ và dọn dẹp khỏi GameState -> Số xe sống giảm về 1
+        gameEngine.update();
+
+        assertTrue(gameEngine.getGameState().isGameOver(), "Game phải lập tức chuyển isGameOver = true sau khi 1 xe bị tiêu diệt làm số xe còn lại <= 1");
+    }
+
 }
