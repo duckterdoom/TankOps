@@ -5,6 +5,7 @@ import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.Ice;
 import tankops.common.model.tank.*;
 
 import java.util.Iterator;
@@ -144,9 +145,40 @@ public class GameEngine {
                     tank.setPosition(oldPosition);
                 }else {
                     tank.setMoving(true);
+
+                    // ĐANG GIỮ PHÍM VÀ Ở TRÊN BĂNG -> KÍCH HOẠT ĐÀ TRƯỢT
+                    double slideDist = getIceSlideDistance(tank);
+                    if (slideDist > 0) {
+                        tank.triggerSlide(slideDist);
+                    }
                 }
             }
+
         });
+        // 2. XỬ LÝ TRƯỢT DÙ ĐANG GIỮ PHÍM HOẶC ĐÃ THẢ PHÍM
+        for (Tank tank : this.gameState.getTanks()) {
+            if (tank != null && !tank.isDestroyed() && tank.isSliding()) {
+                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                tank.slideForward(); // Thực hiện bước trượt
+
+                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                    tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
+                    tank.triggerSlide(0);
+                } else {
+                    tank.setMoving(true);
+                }
+            }
+        }
+
+
+    }
+    private double getIceSlideDistance(Tank tank) {
+        for (Environment env : this.gameState.getEnvironments()) {
+            if (env instanceof Ice ice && ice.isSlippery() && tank.intersects(ice)) {
+                return ice.getSlideDistance();
+            }
+        }
+        return 0.0;
     }
     private void updateBullets(){
         Iterator<Bullet> iterator = this.gameState.getBullets().iterator();
