@@ -21,6 +21,9 @@ public abstract class Tank extends Entity {
     private boolean isMoving = false;
 
     private double slideDistanceRemaining = 0.0;
+
+    private long lastShootTime = 0; // Thời điểm bắn gần nhất (ms)
+    private long shootCooldownMillis = 500;
     public Tank(String id, Vector2D position, Direction direction, double moveSpeed, int maxHealth) {
         super(id, position, TANK_SIZE, TANK_SIZE);
         this.direction = direction;
@@ -47,7 +50,15 @@ public abstract class Tank extends Entity {
     public abstract double getBulletSpeed();
     public abstract int getBulletStarLevel();
 
+    public boolean canShoot() {
+        long currentTime = System.currentTimeMillis();
+        return (currentTime - lastShootTime) >= shootCooldownMillis;
+    }
     public Bullet fire(String bulletId) {
+        if (!canShoot()) {
+            return null;
+        }
+        this.lastShootTime = System.currentTimeMillis();
         double centerX = getPosition().x() + TANK_SIZE / 2.0;
         double centerY = getPosition().y() + TANK_SIZE / 2.0;
         double offset = 16.0;
@@ -85,5 +96,13 @@ public abstract class Tank extends Entity {
 
         // Trừ bớt quãng đường trượt còn lại
         slideDistanceRemaining -= actualStep;
+    }
+
+    public long getShootCooldownMillis() {
+        return shootCooldownMillis;
+    }
+
+    public void setShootCooldownMillis(long shootCooldownMillis) {
+        this.shootCooldownMillis = shootCooldownMillis;
     }
 }

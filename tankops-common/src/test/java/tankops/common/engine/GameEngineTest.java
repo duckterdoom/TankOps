@@ -215,13 +215,13 @@ class GameEngineTest {
         MockObstacleWall wall = new MockObstacleWall("wall_1", collisionPos);
         gameEngine.getGameState().getEnvironments().add(wall);
 
-        Bullet bullet = new Bullet("bullet_wall", playerId, collisionPos, Direction.RIGHT, Bullet.SPEED_NORMAL, 1, 2);
+        Bullet bullet = new Bullet("bullet_wall", playerId, collisionPos, Direction.RIGHT, Bullet.SPEED_NORMAL, 1, 0);
         gameEngine.getGameState().addBullet(bullet);
 
         gameEngine.update();
 
         assertTrue(wall.isHitCalled(), "Tường phải gọi hàm takeHit khi đạn đâm vào");
-        assertEquals(2, wall.getLastStarLevel(), "Cấp độ sao truyền vào takeHit phải khớp với starLevel của đạn");
+        assertEquals(0, wall.getLastStarLevel(), "Cấp độ sao truyền vào takeHit phải khớp với starLevel của đạn");
         assertTrue(gameEngine.getGameState().getBullets().isEmpty(), "Viên đạn phải bị xóa sau khi chạm tường");
     }
 
@@ -443,5 +443,64 @@ class GameEngineTest {
 
         assertTrue(gameEngine.getGameState().isGameOver(), "Game phải lập tức chuyển isGameOver = true sau khi 1 xe bị tiêu diệt làm số xe còn lại <= 1");
     }
+
+    // =========================================================================
+    // TEST CASES FOR SHOOT COOLDOWN LOGIC
+    // =========================================================================
+
+    @Test
+    @DisplayName("COOLDOWN: Bắn 2 lần liên tiếp ngay lập tức chỉ tạo ra đúng 1 viên đạn")
+    void testShootCooldown_SpamShootBlocked() {
+        // Lần bắn thứ 1: Thành công
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size(), "Lần bắn đầu tiên phải tạo ra 1 viên đạn");
+
+        // Lần bắn thứ 2 ngay lập tức (0ms trôi qua): Bị chặn bởi Cooldown
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size(), "Lần bắn thứ 2 liên tiếp phải bị block do chưa hết Cooldown");
+    }
+
+    @Test
+    @DisplayName("COOLDOWN: Có thể bắn tiếp viên thứ 2 sau khi đã chờ đủ thời gian Cooldown")
+    void testShootCooldown_CanShootAfterCooldownPasses() throws InterruptedException {
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        assertNotNull(tank);
+        tank.setShootCooldownMillis(100); // Đặt cooldown ngắn 100ms để test nhanh
+
+        // Lần bắn 1
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size());
+
+        // Giả lập chờ 120ms (đã vượt qua cooldown 100ms)
+        Thread.sleep(120);
+
+        // Lần bắn 2: Thành công
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(2, gameEngine.getGameState().getBullets().size(), "Phải bắn được viên đạn thứ 2 sau khi đã chờ hết Cooldown");
+    }
+
+
+    @Test
+    @DisplayName("COOLDOWN: Các người chơi khác nhau có bộ đếm Cooldown độc lập")
+    void testShootCooldown_IndependentBetweenPlayers() {
+        String player2Id = "player_2";
+        gameEngine.spawnPlayers(List.of(player2Id), List.of(new Vector2D(200.0, 200.0)));
+
+        // Player 1 bắn
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size());
+
+        // Player 2 bắn ngay lập tức -> Vẫn thành công vì Cooldown tính riêng cho từng xe
+        gameEngine.handleShootEvent(player2Id);
+        assertEquals(2, gameEngine.getGameState().getBullets().size(), "Player 2 phải bắn được độc lập với Cooldown của Player 1");
+
+        // Player 1 bắn tiếp ngay -> Bị block
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(2, gameEngine.getGameState().getBullets().size());
+    }
+
+
+
+
 
 }

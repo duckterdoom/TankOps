@@ -109,7 +109,7 @@ public class GameEngine {
         Tank tank = this.gameState.getTankById(playerId);
 
         // check whether tank is destroyed or not
-        if (tank != null && !tank.isDestroyed()) {
+        if (tank != null && !tank.isDestroyed() && tank.canShoot()) {
             //create bulletId based on playerId
             String bulletId = playerId + "_b_" + System.currentTimeMillis();
 
