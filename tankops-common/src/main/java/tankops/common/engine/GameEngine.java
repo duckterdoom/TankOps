@@ -5,6 +5,7 @@ import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.Ice;
 import tankops.common.model.tank.*;
 
 import java.util.Iterator;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 public class GameEngine {
 
@@ -22,6 +24,9 @@ public class GameEngine {
     private double mapWidth = 800.0;
     private double mapHeight = 600.0;
 
+
+    // Callback dùng để báo cho GameRoom biết khi có player hạ gục tank khác
+    private Consumer<String> onKillCallback;
     //Initialize GameEngine with populating environment data from GameMap into GameState
     public GameEngine(GameMap gameMap) {
         if(gameMap != null ){
@@ -34,6 +39,10 @@ public class GameEngine {
             }
         }
 
+    }
+    // Đăng ký callback để gửi sự kiện Kill về cho GameRoom (không làm thay đổi logic GameRoom)
+    public void setOnKillCallback(Consumer<String> onKillCallback) {
+        this.onKillCallback = onKillCallback;
     }
 
     //Spawn player tanks
@@ -101,7 +110,7 @@ public class GameEngine {
         Tank tank = this.gameState.getTankById(playerId);
 
         // check whether tank is destroyed or not
-        if (tank != null && !tank.isDestroyed()) {
+        if (tank != null && !tank.isDestroyed() && tank.canShoot()) {
             //create bulletId based on playerId
             String bulletId = playerId + "_b_" + System.currentTimeMillis();
 
@@ -117,6 +126,7 @@ public class GameEngine {
 
         updatePlayerTanks();
         updateBullets();
+        checkGameOverCondition();
         cleanupDestroyedTanks();
     }
     private void updatePlayerTanks() {
@@ -135,9 +145,40 @@ public class GameEngine {
                     tank.setPosition(oldPosition);
                 }else {
                     tank.setMoving(true);
+
+                    // ĐANG GIỮ PHÍM VÀ Ở TRÊN BĂNG -> KÍCH HOẠT ĐÀ TRƯỢT
+                    double slideDist = getIceSlideDistance(tank);
+                    if (slideDist > 0) {
+                        tank.triggerSlide(slideDist);
+                    }
                 }
             }
+
         });
+        // 2. XỬ LÝ TRƯỢT DÙ ĐANG GIỮ PHÍM HOẶC ĐÃ THẢ PHÍM
+        for (Tank tank : this.gameState.getTanks()) {
+            if (tank != null && !tank.isDestroyed() && tank.isSliding()) {
+                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                tank.slideForward(); // Thực hiện bước trượt
+
+                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                    tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
+                    tank.triggerSlide(0);
+                } else {
+                    tank.setMoving(true);
+                }
+            }
+        }
+
+
+    }
+    private double getIceSlideDistance(Tank tank) {
+        for (Environment env : this.gameState.getEnvironments()) {
+            if (env instanceof Ice ice && ice.isSlippery() && tank.intersects(ice)) {
+                return ice.getSlideDistance();
+            }
+        }
+        return 0.0;
     }
     private void updateBullets(){
         Iterator<Bullet> iterator = this.gameState.getBullets().iterator();
@@ -212,10 +253,24 @@ public class GameEngine {
 
             // Nếu đạn chạm vào xe tăng
             if (bullet.intersects(tank)) {
-                // Xe tăng chịu sát thương từ đạn
-                tank.takeDamage(bullet.getDamage());
-                if (tank.isDestroyed()) {
+                // Lưu lại trạng thái số mạng hoặc trạng thái sống trước khi nhận sát thương
+                int oldLives = (tank instanceof PlayerTank playerTank) ? playerTank.getLives() : 1;
 
+                // Xe chịu sát thương (bên trong hàm này sẽ tự trừ health/lives)
+                tank.takeDamage(bullet.getDamage());
+
+                int newLives = (tank instanceof PlayerTank playerTank) ? playerTank.getLives() : 0;
+
+                // TÍNH ĐIỂM KHI:
+                // 1. Xe bị phá hủy hoàn toàn (isDestroyed)
+                // HOẶC 2. Player Tank bị nổ mất 1 mạng (oldLives > newLives)
+                boolean wasKilled = tank.isDestroyed() || (oldLives > newLives);
+
+                if (wasKilled) {
+                    String killerId = bullet.getOwnerId();
+                    if (killerId != null && onKillCallback != null) {
+                        onKillCallback.accept(killerId); // Báo về GameRoom để addKill
+                    }
                 }
                 return true; // Trả về true để xóa đạn
             }
@@ -233,9 +288,19 @@ public class GameEngine {
         }
     }
 
-    //get current game state
-    public GameState getGameState() {
-        return this.gameState;
+    // XỬ LÝ END GAME:
+    // Tự động kiểm tra số xe còn sống để setGameOver trong GameState
+    private void checkGameOverCondition() {
+        int aliveCount = 0;
+        for (Tank tank : this.gameState.getTanks()) {
+            if (!tank.isDestroyed()) {
+                aliveCount++;
+            }
+        }
+        // Nếu số xe sống <= 1 thì cập nhật isGameOver trong GameState
+        if (aliveCount <= 1) {
+            this.gameState.setGameOver(true);
+        }
     }
 
     public double getMapHeight() {
@@ -244,6 +309,13 @@ public class GameEngine {
     public double getMapWidth() {
         return mapWidth;
     }
+
+    //get current game state
+    public GameState getGameState() {
+        return this.gameState;
+    }
+
+
 
 
 }

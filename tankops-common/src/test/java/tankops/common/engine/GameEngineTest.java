@@ -8,6 +8,7 @@ import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.Ice;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 
@@ -215,13 +216,13 @@ class GameEngineTest {
         MockObstacleWall wall = new MockObstacleWall("wall_1", collisionPos);
         gameEngine.getGameState().getEnvironments().add(wall);
 
-        Bullet bullet = new Bullet("bullet_wall", playerId, collisionPos, Direction.RIGHT, Bullet.SPEED_NORMAL, 1, 2);
+        Bullet bullet = new Bullet("bullet_wall", playerId, collisionPos, Direction.RIGHT, Bullet.SPEED_NORMAL, 1, 0);
         gameEngine.getGameState().addBullet(bullet);
 
         gameEngine.update();
 
         assertTrue(wall.isHitCalled(), "Tường phải gọi hàm takeHit khi đạn đâm vào");
-        assertEquals(2, wall.getLastStarLevel(), "Cấp độ sao truyền vào takeHit phải khớp với starLevel của đạn");
+        assertEquals(0, wall.getLastStarLevel(), "Cấp độ sao truyền vào takeHit phải khớp với starLevel của đạn");
         assertTrue(gameEngine.getGameState().getBullets().isEmpty(), "Viên đạn phải bị xóa sau khi chạm tường");
     }
 
@@ -346,5 +347,204 @@ class GameEngineTest {
         // - Viên đạn gây sát thương đã bị xóa
         assertTrue(gameEngine.getGameState().getBullets().isEmpty(), "Đạn sau khi trúng phải bị xóa khỏi GameState");
     }
+
+    // =========================================================================
+    // TEST CASES FOR ON_KILL_CALLBACK & GAME_OVER LOGIC
+    // =========================================================================
+
+    @Test
+    @DisplayName("onKillCallback gửi đúng ID người bắn khi tiêu diệt EnemyTank (Bot)")
+    void testOnKillCallbackTriggersOnEnemyTankDestroyed() {
+        String enemyBotId = "bot_1";
+        Vector2D botPos = new Vector2D(300.0, 300.0);
+        gameEngine.spawnBots(List.of(enemyBotId), List.of(botPos));
+
+        // Tạo danh sách hứng killerId trả về từ callback
+        List<String> killedByList = new ArrayList<>();
+        gameEngine.setOnKillCallback(killedByList::add);
+
+        Tank enemyBot = gameEngine.getGameState().getTankById(enemyBotId);
+        assertNotNull(enemyBot);
+
+        // Bắn viên đạn chí mạng vào Bot
+        Bullet lethalBullet = new Bullet("bullet_fatal_bot", playerId, botPos, Direction.RIGHT, Bullet.SPEED_NORMAL, enemyBot.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(lethalBullet);
+
+        gameEngine.update();
+
+        // Kiểm tra callback đã nhận đúng playerId của người bắn
+        assertEquals(1, killedByList.size(), "Callback phải được gọi đúng 1 lần khi Bot nổ");
+        assertEquals(playerId, killedByList.get(0), "ID của killer truyền sang callback phải là playerId");
+    }
+
+    @Test
+    @DisplayName("onKillCallback vẫn gửi đúng killerId khi PlayerTank bị bắn nổ mất 1 mạng (dù chưa chết hẳn)")
+    void testOnKillCallbackTriggersOnPlayerTankLosesLife() {
+        String enemyPlayerId = "player_2";
+        Vector2D enemyPos = new Vector2D(400.0, 400.0);
+        gameEngine.spawnPlayers(List.of(enemyPlayerId), List.of(enemyPos));
+
+        PlayerTank targetPlayer = (PlayerTank) gameEngine.getGameState().getTankById(enemyPlayerId);
+        assertNotNull(targetPlayer);
+
+        // Thêm mạng để Player 2 có 2 mạng
+        targetPlayer.addLife();
+        assertEquals(2, targetPlayer.getLives());
+
+        List<String> killedByList = new ArrayList<>();
+        gameEngine.setOnKillCallback(killedByList::add);
+
+        // player_1 bắn trúng làm player_2 nổ mất 1 mạng
+        Bullet bullet = new Bullet("bullet_hit_p2", playerId, enemyPos, Direction.RIGHT, Bullet.SPEED_NORMAL, targetPlayer.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(bullet);
+
+        gameEngine.update();
+
+        // Mạng giảm xuống 1
+        assertEquals(1, targetPlayer.getLives());
+        assertFalse(targetPlayer.isDestroyed(), "Player 2 chưa bị tiêu diệt hoàn toàn vì vẫn còn 1 mạng");
+
+        // Callback vẫn phải ghi nhận player_1 đã có 1 lượt hạ gục (kill)
+        assertEquals(1, killedByList.size(), "Callback phải được kích hoạt ngay cả khi chỉ làm đối phương mất 1 mạng");
+        assertEquals(playerId, killedByList.get(0), "Killer ID ghi nhận phải là player_1");
+    }
+
+    @Test
+    @DisplayName("GameState được cập nhật isGameOver = true khi số xe còn sống <= 1")
+    void testGameOverSetToTrueWhenOneOrZeroTanksRemain() {
+        // Ban đầu trong setUp chỉ spawn đúng 1 xe (player_1)
+        assertFalse(gameEngine.getGameState().isGameOver(), "Game chưa over khi vừa khởi tạo");
+
+        // Chạy update tick đầu tiên
+        gameEngine.update();
+
+        // Vì chỉ có 1 xe trên map (aliveCount = 1) -> Game Engine tự nhận biết và setGameOver(true)
+        assertTrue(gameEngine.getGameState().isGameOver(), "GameState phải chuyển isGameOver = true do chỉ còn <= 1 xe sống");
+    }
+
+    @Test
+    @DisplayName("Game không over khi còn >= 2 xe sống, và tự động over khi 1 xe bị tiêu diệt")
+    void testGameOverTriggersOnlyWhenTanksReducedToOne() {
+        String enemyId = "enemy_player";
+        Vector2D enemyPos = new Vector2D(300.0, 300.0);
+        gameEngine.spawnPlayers(List.of(enemyId), List.of(enemyPos));
+
+        Tank enemyTank = gameEngine.getGameState().getTankById(enemyId);
+
+        // Update nhịp tick 1: Trên map đang có 2 xe (player_1 và enemy_player)
+        gameEngine.update();
+        assertFalse(gameEngine.getGameState().isGameOver(), "Game không được over khi vẫn còn 2 xe sống");
+
+        // Bắn nổ hoàn toàn enemy_player
+        Bullet lethalBullet = new Bullet("bullet_fatal", playerId, enemyPos, Direction.RIGHT, Bullet.SPEED_NORMAL, enemyTank.getMaxHealth(), 0);
+        gameEngine.getGameState().addBullet(lethalBullet);
+
+        // Update nhịp tick 2: enemy_player bị nổ và dọn dẹp khỏi GameState -> Số xe sống giảm về 1
+        gameEngine.update();
+
+        assertTrue(gameEngine.getGameState().isGameOver(), "Game phải lập tức chuyển isGameOver = true sau khi 1 xe bị tiêu diệt làm số xe còn lại <= 1");
+    }
+
+    // =========================================================================
+    // TEST CASES FOR SHOOT COOLDOWN LOGIC
+    // =========================================================================
+
+    @Test
+    @DisplayName("COOLDOWN: Bắn 2 lần liên tiếp ngay lập tức chỉ tạo ra đúng 1 viên đạn")
+    void testShootCooldown_SpamShootBlocked() {
+        // Lần bắn thứ 1: Thành công
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size(), "Lần bắn đầu tiên phải tạo ra 1 viên đạn");
+
+        // Lần bắn thứ 2 ngay lập tức (0ms trôi qua): Bị chặn bởi Cooldown
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size(), "Lần bắn thứ 2 liên tiếp phải bị block do chưa hết Cooldown");
+    }
+
+    @Test
+    @DisplayName("COOLDOWN: Có thể bắn tiếp viên thứ 2 sau khi đã chờ đủ thời gian Cooldown")
+    void testShootCooldown_CanShootAfterCooldownPasses() throws InterruptedException {
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        assertNotNull(tank);
+        tank.setShootCooldownMillis(100); // Đặt cooldown ngắn 100ms để test nhanh
+
+        // Lần bắn 1
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size());
+
+        // Giả lập chờ 120ms (đã vượt qua cooldown 100ms)
+        Thread.sleep(120);
+
+        // Lần bắn 2: Thành công
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(2, gameEngine.getGameState().getBullets().size(), "Phải bắn được viên đạn thứ 2 sau khi đã chờ hết Cooldown");
+    }
+
+
+    @Test
+    @DisplayName("COOLDOWN: Các người chơi khác nhau có bộ đếm Cooldown độc lập")
+    void testShootCooldown_IndependentBetweenPlayers() {
+        String player2Id = "player_2";
+        gameEngine.spawnPlayers(List.of(player2Id), List.of(new Vector2D(200.0, 200.0)));
+
+        // Player 1 bắn
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(1, gameEngine.getGameState().getBullets().size());
+
+        // Player 2 bắn ngay lập tức -> Vẫn thành công vì Cooldown tính riêng cho từng xe
+        gameEngine.handleShootEvent(player2Id);
+        assertEquals(2, gameEngine.getGameState().getBullets().size(), "Player 2 phải bắn được độc lập với Cooldown của Player 1");
+
+        // Player 1 bắn tiếp ngay -> Bị block
+        gameEngine.handleShootEvent(playerId);
+        assertEquals(2, gameEngine.getGameState().getBullets().size());
+    }
+
+    // =========================================================================
+    // TEST CASES FOR ICE SLIDE LOGIC (TRƯỢT BĂNG)
+    // =========================================================================
+
+    @Test
+    @DisplayName("ICE SLIDE: Xe tăng vọt đi (trượt tức thì) ngay trong nhịp đè phím khi bước vào Băng")
+    void testTankSlidesInstantlyWhileHoldingKeyOnIce() {
+        Ice ice = new Ice("ice_1", new Vector2D(102.0, 100.0));
+        gameEngine.getGameState().getEnvironments().add(ice);
+
+        gameEngine.handleMoveEvent(playerId, Direction.RIGHT);
+        gameEngine.update();
+
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        assertNotNull(tank);
+        assertTrue(tank.isSliding(), "Xe tăng phải bật trạng thái trượt khi di chuyển trên Băng");
+
+        // Quãng đường đi được phải lớn hơn quãng đường di chuyển 1 bước bình thường (moveSpeed) do có thêm bước slideForward
+        double expectedMinX = startPos.x() + tank.getMoveSpeed() + Tank.SLIDE_SPEED;
+        assertTrue(tank.getPosition().x() >= expectedMinX, "Xe tăng phải trượt vọt đi xa hơn bình thường khi giữ phím trên Băng");
+    }
+
+    @Test
+    @DisplayName("ICE SLIDE: Xe tăng tiếp tục trượt về phía trước sau khi nhả phím nếu còn đà trượt")
+    void testTankContinuesSlideAfterKeyReleaseOnIce() {
+        Ice ice = new Ice("ice_1", startPos);
+        gameEngine.getGameState().getEnvironments().add(ice);
+
+        // 1. Nhấn phím RIGHT để tích đà trượt
+        gameEngine.handleMoveEvent(playerId, Direction.RIGHT);
+        gameEngine.update();
+
+        Tank tank = gameEngine.getGameState().getTankById(playerId);
+        Vector2D posBeforeRelease = tank.getPosition();
+
+        // 2. Nhả phím (direction = null)
+        gameEngine.handleMoveEvent(playerId, null);
+        gameEngine.update();
+
+        // Xe tăng tiếp tục trượt thêm một bước nữa
+        assertTrue(tank.getPosition().x() > posBeforeRelease.x(), "Xe tăng phải tiếp tục trượt về phía trước sau khi nhả phím");
+    }
+
+
+
+
 
 }
