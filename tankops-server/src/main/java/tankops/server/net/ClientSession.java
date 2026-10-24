@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import tankops.common.net.Message;
@@ -48,6 +49,9 @@ public class ClientSession implements Runnable {
 
     // Phòng chơi hiện tại của client này (nếu đã vào phòng)
     private volatile GameRoom currentRoom;
+
+    // Đã dọn dẹp chưa (để cleanup chỉ chạy 1 lần)
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public ClientSession(Socket socket, GameServer gameServer) {
         this.socket = socket;
@@ -171,37 +175,18 @@ public class ClientSession implements Runnable {
         }
 
         try {
-            String roomId = join.roomId();
-            GameRoom room;
-            if (roomId == null || roomId.trim().isEmpty() || roomId.equals("auto")) {
-                // Tự động tìm phòng còn chỗ hoặc tạo mới
-                List<GameRoom> rooms = gameServer.getRoomManager().listRooms();
-                GameRoom available = null;
-                for (GameRoom r : rooms) {
-                    if (r.getState() == RoomState.LOBBY && r.getPlayerCount() < 5) {
-                        available = r;
-                        break;
-                    }
-                }
-                if (available == null) {
-                    available = gameServer.getRoomManager().createRoom();
-                }
-                room = available;
-            } else {
-                room = gameServer.getRoomManager().getRoom(roomId);
-                if (room == null) {
-                    room = gameServer.getRoomManager().createRoom();
-                }
-            }
-
-            room.addPlayer(this);
-            this.currentRoom = room;
+            // Việc "tìm/tạo phòng + thêm người" làm trong RoomManager, trong một khối khóa,
+            // để không bị phòng bị xóa chen vào giữa (tránh người chơi vào "phòng ma").
+            GameRoom room = gameServer.getRoomManager().joinOrCreate(join.roomId(), this);
             int playerNumber = room.getPlayerCount();
             send(new JoinResponseMessage(true, "Vào phòng thành công", room.getId(), playerId, playerNumber));
             System.out.println("[ClientSession " + playerId + "] Đã vào phòng: " + room.getId());
 
         } catch (RoomFullException e) {
             send(new JoinResponseMessage(false, "Phòng đã đầy", join.roomId(), playerId, -1));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            // Không có phòng / phòng đã bắt đầu / đang ở phòng khác / hết số phòng tối đa
+            send(new JoinResponseMessage(false, e.getMessage(), join.roomId(), playerId, -1));
         } catch (Exception e) {
             send(new JoinResponseMessage(false, "Lỗi vào phòng: " + e.getMessage(), join.roomId(), playerId, -1));
         }
@@ -223,7 +208,7 @@ public class ClientSession implements Runnable {
         List<GameRoom> rooms = gameServer.getRoomManager().listRooms();
         List<RoomInfo> infoList = new ArrayList<>();
         for (GameRoom r : rooms) {
-            infoList.add(new RoomInfo(r.getId(), r.getPlayerCount(), 5, r.getState().name()));
+            infoList.add(new RoomInfo(r.getId(), r.getPlayerCount(), r.getMaxPlayers(), r.getState().name()));
         }
         send(new RoomListResponseMessage(infoList));
     }
@@ -231,11 +216,40 @@ public class ClientSession implements Runnable {
     private void handleInput(InputMessage input) {
         GameRoom room = currentRoom;
         if (room != null) {
+            // Luôn dùng playerId của CHÍNH phiên này, không tin playerId client tự ghi trong tin nhắn
             room.submitMove(playerId, input.direction());
+            if (input.shooting()) {
+                room.submitShoot(playerId);
+            }
+        }
+    }
+
+    // TẠM THỜI: protocol chưa có tin nhắn "bắt đầu ván". Trong lúc chờ M1 thêm StartGameMessage,
+    // người chơi gõ chat "/start" để bắt đầu. Khi có StartGameMessage, bỏ nhánh này và
+    // gọi handleStartRequest() từ handleMessage.
+    private static final String START_COMMAND = "/start";
+
+    private void handleStartRequest() {
+        GameRoom room = currentRoom;
+        if (room == null || gameServer == null || gameServer.getRoomManager() == null) {
+            send(new ChatMessage("SERVER", "Bạn chưa ở trong phòng nào"));
+            return;
+        }
+        try {
+            gameServer.getRoomManager().startGame(
+                    room.getId(), this, gameServer.loadMultiMap(), gameServer.getTickRate());
+            System.out.println("[ClientSession " + playerId + "] Bắt đầu ván ở phòng: " + room.getId());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            // Chưa đủ người / phòng đã bắt đầu / không ở trong phòng đó...
+            send(new ChatMessage("SERVER", e.getMessage()));
         }
     }
 
     private void handleChat(ChatMessage chat) {
+        if (START_COMMAND.equals(chat.content().trim())) {
+            handleStartRequest();
+            return;
+        }
         GameRoom room = currentRoom;
         if (room != null) {
             // Forward tin nhắn tới tất cả người chơi trong cùng phòng
@@ -248,6 +262,10 @@ public class ClientSession implements Runnable {
     // =========================================================================
 
     private void cleanup() {
+        // Có thể bị gọi 2 lần (tin Disconnect rồi finally). Chỉ làm đúng 1 lần.
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         if (currentRoom != null && gameServer != null && gameServer.getRoomManager() != null) {
             try {
                 gameServer.getRoomManager().leaveRoom(currentRoom.getId(), this);
