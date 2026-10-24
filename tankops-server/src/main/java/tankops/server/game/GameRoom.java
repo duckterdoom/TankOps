@@ -24,7 +24,7 @@ import tankops.server.net.ClientSession;
  * Một phòng chơi: danh sách người chơi (T10) + vòng tick (T15) + vòng đời và điểm số (T21).
  *
  * QUY TẮC VÀNG (single-writer): chỉ có thread của TickLoop được gọi GameEngine.
- * Các thread socket chỉ BỎ LỆNH vào hàng đợi (submitMove) hoặc bật cờ (requestFinish).
+ * Các thread socket chỉ BỎ LỆNH vào hàng đợi (submitMove, submitShoot) hoặc bật cờ (requestFinish).
  */
 public class GameRoom {
 
@@ -45,12 +45,13 @@ public class GameRoom {
     private String winnerId = null; // null = chưa xong hoặc hòa
 
     // ---- T15: tick ----
-    private final ConcurrentLinkedQueue<MoveCommand> inputQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<InputCommand> inputQueue = new ConcurrentLinkedQueue<>();
     private GameEngine engine;          // chỉ thread tick được đụng vào
     private TickLoop tickLoop;
     private volatile int tickCount = 0;
 
-    private record MoveCommand(String playerId, Direction direction) { }
+    // Một lệnh của người chơi: hoặc đổi hướng đi (shoot = false), hoặc bắn (shoot = true)
+    private record InputCommand(String playerId, Direction direction, boolean shoot) { }
 
     public GameRoom(String id, int maxPlayers) {
         this.id = id;
@@ -59,6 +60,10 @@ public class GameRoom {
 
     public String getId() {
         return id;
+    }
+
+    public int getMaxPlayers() {
+        return maxPlayers;
     }
 
     // ================= Danh sách người chơi (T10) =================
@@ -115,6 +120,8 @@ public class GameRoom {
         }
 
         engine = new GameEngine(map);
+        // Engine báo "có người hạ xe" -> cộng điểm cho người bắn. (Hàm này chạy trên thread tick)
+        engine.setOnKillCallback(this::addKill);
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
@@ -174,7 +181,12 @@ public class GameRoom {
 
     /** Thread socket gọi khi nhận lệnh của client. Chỉ bỏ vào hàng đợi, KHÔNG đụng engine. */
     public void submitMove(String playerId, Direction direction) {
-        inputQueue.add(new MoveCommand(playerId, direction));
+        inputQueue.add(new InputCommand(playerId, direction, false));
+    }
+
+    /** Thread socket gọi khi client bấm bắn. Cũng chỉ xếp hàng, thread tick mới gọi engine. */
+    public void submitShoot(String playerId) {
+        inputQueue.add(new InputCommand(playerId, null, true));
     }
 
     public int getTickCount() {
@@ -192,9 +204,13 @@ public class GameRoom {
             return; // ván đã kết thúc, tick còn sót lại thì bỏ qua
         }
 
-        MoveCommand cmd;
+        InputCommand cmd;
         while ((cmd = inputQueue.poll()) != null) {
-            engine.handleMoveEvent(cmd.playerId(), cmd.direction());
+            if (cmd.shoot()) {
+                engine.handleShootEvent(cmd.playerId());
+            } else {
+                engine.handleMoveEvent(cmd.playerId(), cmd.direction());
+            }
         }
 
         engine.update();
@@ -206,7 +222,6 @@ public class GameRoom {
         }
 
         broadcast(buildBinarySnapshot());
-        broadcast(buildSnapshot());
     }
 
     // Hết ván khi: có người xin kết thúc, hoặc engine báo hết, hoặc chỉ còn tối đa 1 xe sống
@@ -228,7 +243,6 @@ public class GameRoom {
 
     /** PLAYING -> FINISHED. Chạy trên thread tick. */
     private void finishGame() {
-        String message;
         GameOverMessage gameOverMsg;
         synchronized (this) {
             if (state != RoomState.PLAYING) {
@@ -240,11 +254,9 @@ public class GameRoom {
                 tickLoop.stop();   // shutdownNow không chờ, nên không bị đứng máy
                 tickLoop = null;
             }
-            message = buildGameOverMessage();
             gameOverMsg = new GameOverMessage(winnerId, getScores());
         }
-        broadcast(gameOverMsg);
-        broadcast(message); // gửi mạng NGOÀI khóa
+        broadcast(gameOverMsg); // gửi mạng NGOÀI khóa
     }
 
     // Người thắng = người duy nhất còn xe sống. Nhiều hơn 1 hoặc không còn ai => hòa (null).
@@ -259,26 +271,6 @@ public class GameRoom {
             }
         }
         return found;
-    }
-
-    // Tạm thời là chuỗi chữ đơn giản. Khi M1 xong protocol sẽ đổi sang Message/MessageCodec.
-    private String buildGameOverMessage() {
-        StringBuilder sb = new StringBuilder("GAME_OVER winner=" + (winnerId == null ? "none" : winnerId));
-        for (Map.Entry<String, Integer> e : scores.entrySet()) {
-            sb.append(" ").append(e.getKey()).append(":").append(e.getValue());
-        }
-        return sb.toString();
-    }
-
-    private String buildSnapshot() {
-        GameState gameState = engine.getGameState();
-        StringBuilder sb = new StringBuilder("STATE tick=" + tickCount);
-        for (Tank t : gameState.getTanks()) {
-            sb.append(" ").append(t.getId())
-                    .append("@").append((int) t.getPosition().x())
-                    .append(",").append((int) t.getPosition().y());
-        }
-        return sb.toString();
     }
 
     public SnapshotMessage buildBinarySnapshot() {
@@ -335,21 +327,6 @@ public class GameRoom {
                 p.send(message);
             } catch (Exception e) {
                 System.out.println("[GameRoom] Không gửi được message cho " + p.getPlayerId());
-            }
-        }
-    }
-
-    private void broadcast(String message) {
-        // Copy danh sách dưới khóa rồi gửi NGOÀI khóa: gửi mạng có thể chậm.
-        List<ClientSession> copy;
-        synchronized (this) {
-            copy = new ArrayList<>(players);
-        }
-        for (ClientSession p : copy) {
-            try {
-                p.send(message);
-            } catch (Exception e) {
-                System.out.println("[GameRoom] Không gửi được cho " + p.getPlayerId());
             }
         }
     }
