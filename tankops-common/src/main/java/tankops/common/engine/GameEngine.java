@@ -155,17 +155,30 @@ public class GameEngine {
             }
 
         });
-        // 2. XỬ LÝ TRƯỢT DÙ ĐANG GIỮ PHÍM HOẶC ĐÃ THẢ PHÍM
+        // 2. XỬ LÝ QUÁN TÍNH TRƯỢT (Áp dụng cho cả khi đang giữ phím HOẶC KHI ĐÃ THẢ PHÍM)
         for (Tank tank : this.gameState.getTanks()) {
-            if (tank != null && !tank.isDestroyed() && tank.isSliding()) {
-                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
-                tank.slideForward(); // Thực hiện bước trượt
+            if (tank != null && !tank.isDestroyed()) {
 
-                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
-                    tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
-                    tank.triggerSlide(0);
-                } else {
-                    tank.setMoving(true);
+                // Bổ sung kiểm tra: Nếu người chơi ĐÃ THẢ PHÍM (không nằm trong playerMoveDirections)
+                // nhưng vẫn đang đứng trên băng, ta kích hoạt đà trượt theo hướng mặt hiện tại của tank (direction)
+                if (!playerMoveDirections.containsKey(tank.getId())) {
+                    double slideDist = getIceSlideDistance(tank);
+                    if (slideDist > 0 && !tank.isSliding()) {
+                        tank.triggerSlide(slideDist);
+                    }
+                }
+
+                // Tiến hành thực hiện trượt nếu còn quãng đường trượt (slideDistanceRemaining > 0)
+                if (tank.isSliding()) {
+                    Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                    tank.slideForward(); // Thực hiện 1 bước trượt
+
+                    if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                        tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
+                        tank.triggerSlide(0);
+                    } else {
+                        tank.setMoving(true);
+                    }
                 }
             }
         }
