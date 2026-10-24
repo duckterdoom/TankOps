@@ -7,6 +7,9 @@ import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
 import tankops.common.model.environment.Ice;
 import tankops.common.model.tank.*;
+import tankops.common.model.tank.state.AttackState;
+import tankops.common.model.tank.state.ChaseState;
+import tankops.common.model.tank.state.PatrolState;
 
 import java.util.Iterator;
 import java.util.List;
@@ -103,6 +106,7 @@ public class GameEngine {
 
 
     public void handleShootEvent(String playerId) {
+
         if (playerId == null || playerId.isBlank()) {
             return;
         }
@@ -125,6 +129,7 @@ public class GameEngine {
     public void update(){
 
         updatePlayerTanks();
+        updateBots();
         updateBullets();
         checkGameOverCondition();
         cleanupDestroyedTanks();
@@ -155,17 +160,30 @@ public class GameEngine {
             }
 
         });
-        // 2. XỬ LÝ TRƯỢT DÙ ĐANG GIỮ PHÍM HOẶC ĐÃ THẢ PHÍM
+        // 2. XỬ LÝ QUÁN TÍNH TRƯỢT (Áp dụng cho cả khi đang giữ phím HOẶC KHI ĐÃ THẢ PHÍM)
         for (Tank tank : this.gameState.getTanks()) {
-            if (tank != null && !tank.isDestroyed() && tank.isSliding()) {
-                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
-                tank.slideForward(); // Thực hiện bước trượt
+            if (tank != null && !tank.isDestroyed()) {
 
-                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
-                    tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
-                    tank.triggerSlide(0);
-                } else {
-                    tank.setMoving(true);
+                // Bổ sung kiểm tra: Nếu người chơi ĐÃ THẢ PHÍM (không nằm trong playerMoveDirections)
+                // nhưng vẫn đang đứng trên băng, ta kích hoạt đà trượt theo hướng mặt hiện tại của tank (direction)
+                if (!playerMoveDirections.containsKey(tank.getId())) {
+                    double slideDist = getIceSlideDistance(tank);
+                    if (slideDist > 0 && !tank.isSliding()) {
+                        tank.triggerSlide(slideDist);
+                    }
+                }
+
+                // Tiến hành thực hiện trượt nếu còn quãng đường trượt (slideDistanceRemaining > 0)
+                if (tank.isSliding()) {
+                    Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                    tank.slideForward(); // Thực hiện 1 bước trượt
+
+                    if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                        tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
+                        tank.triggerSlide(0);
+                    } else {
+                        tank.setMoving(true);
+                    }
                 }
             }
         }
@@ -206,7 +224,7 @@ public class GameEngine {
 
     }
 
-    private boolean checkWallCollision(Tank tank){
+    public boolean checkWallCollision(Tank tank){
         for(Environment env : this.gameState.getEnvironments()){
             if(!env.canTankPass() && tank.intersects(env)){
                 return true;
@@ -278,6 +296,69 @@ public class GameEngine {
         return false;
     }
 
+    private void updateBots() {
+        for (Tank tank : this.gameState.getTanks()) {
+            if (tank instanceof EnemyTank bot && !bot.isDestroyed()) {
+
+                PlayerTank targetPlayer = findNearestPlayer(bot);
+                double distance = (targetPlayer != null) ? calculateDistance(bot.getPosition(), targetPlayer.getPosition()) : Double.MAX_VALUE;
+
+                // CHUYỂN TRẠNG THÁI SỬ DỤNG SINGLETON
+
+                if (targetPlayer == null || distance > 350.0) {
+                    if (bot.getCurrentState() != PatrolState.getInstance()) bot.changeState(PatrolState.getInstance());
+                } else if (distance > 150) {
+                    if (bot.getCurrentState() != ChaseState.getInstance()) bot.changeState(ChaseState.getInstance());
+                } else {
+                     bot.changeState(AttackState.getInstance());
+                }
+                // THỰC THI
+                bot.getCurrentState().execute(bot, this);
+            }
+        }
+    }
+
+    // --- CÁC PHƯƠNG THỨC HELPER CHO AI & TOÁN HỌC ---
+
+    public double calculateDistance(Vector2D p1, Vector2D p2) {
+        return Math.hypot(p2.x() - p1.x(), p2.y() - p1.y());
+    }
+
+    public PlayerTank findNearestPlayer(EnemyTank bot) {
+        PlayerTank nearest = null;
+        double minDistance = Double.MAX_VALUE;
+
+        for (Tank tank : this.gameState.getTanks()) {
+            if (tank instanceof PlayerTank player && !player.isDestroyed()) {
+                double dist = calculateDistance(bot.getPosition(), player.getPosition());
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    nearest = player;
+                }
+            }
+        }
+        return nearest;
+    }
+
+
+    public Direction getRandomDirection() {
+        Direction[] dirs = Direction.values();
+        return dirs[random.nextInt(dirs.length)];
+    }
+
+    public boolean moveBot(Tank tank, Direction direction) {
+        Vector2D old = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+        tank.setDirection(direction);
+        tank.move(direction);
+        if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+            tank.setPosition(old);
+            tank.setMoving(false);
+            return false;
+        }
+        tank.setMoving(true);
+        return true;
+    }
+
     private void cleanupDestroyedTanks() {
         Iterator<Tank> iterator = this.gameState.getTanks().iterator();
         while (iterator.hasNext()) {
@@ -314,7 +395,6 @@ public class GameEngine {
     public GameState getGameState() {
         return this.gameState;
     }
-
 
 
 
