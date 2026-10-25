@@ -15,8 +15,6 @@
         <module>tankops-server</module>
         <module>tankops-client</module>
         <module>tankops-tools</module>
-        <module>database</module>
-
     </modules>
 
     <dependencyManagement>
@@ -29,13 +27,12 @@
                 <scope>test</scope>
             </dependency>
 
-            <!-- Thư viện kết nối Java với MongoDB -->
+            <!-- SQLite JDBC -->
             <dependency>
-                <groupId>org.mongodb</groupId>
-                <artifactId>mongodb-driver-sync</artifactId>
-                <version>4.11.1</version>
+                <groupId>org.xerial</groupId>
+                <artifactId>sqlite-jdbc</artifactId>
+                <version>3.45.1.0</version>
             </dependency>
-
         </dependencies>
     </dependencyManagement>
 
