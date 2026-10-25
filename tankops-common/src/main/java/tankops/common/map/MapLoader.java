@@ -32,6 +32,7 @@ public class MapLoader {
         List<Environment> environments = new ArrayList<>();
         List<Vector2D> playerSpawnPoints = new ArrayList<>();
         List<Vector2D> enemySpawnPoints = new ArrayList<>();
+        List<Vector2D> powerUpSpawnPoints = new ArrayList<>();
 
 
         BufferedReader reader = new BufferedReader(source);
@@ -52,12 +53,15 @@ public class MapLoader {
             }
             for (int col = 0; col < tokens.length; col++) {
                 String token = tokens[col];
-                if (EMPTY_TOKEN.equals(token)) continue;
 
                 Vector2D position = new Vector2D(
                         col * Environment.TILE_SIZE,
                         row * Environment.TILE_SIZE
                 );
+                if (EMPTY_TOKEN.equals(token)) {
+                    powerUpSpawnPoints.add(position);
+                    continue;
+                }
 
                 if(token.equals("P")){
                     playerSpawnPoints.add(position);
@@ -76,7 +80,7 @@ public class MapLoader {
             }
             row++;
         }
-        return new GameMap(environments, playerSpawnPoints, enemySpawnPoints, maxCols, row);
+        return new GameMap(environments, playerSpawnPoints, enemySpawnPoints, powerUpSpawnPoints, maxCols, row);
     }
 
     private Environment createEnvironment(String token, String id, Vector2D position, int lineNumber) {
