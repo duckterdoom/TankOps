@@ -17,13 +17,13 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 
 ### Bảng tóm tắt tiến độ các module
 
-| Module / Thành phần | Mức độ hoàn thành | Đánh giá hiện trạng |
-| :--- | :---: | :--- |
-| **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map, GameEngine cơ bản. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC06 và TC07 với 47/47 tests passed. Chưa có logic đạn bay/va chạm đạn trong Engine. |
-| **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop 30 tick/s, RoomManager, GameRoom). **Đã tích hợp MessageCodec vào ClientSession và GameRoom** (phát snapshot nhị phân 30 Hz, nhận Input, Ping/Pong, RoomList, Chat), 23/23 tests passed. Chưa có Database (JDBC) và Replay. |
+| Module / Thành phần | Mức độ hoàn thành | Đánh giá hiện trạng                                                                                                                                                                                                                                                                                                           |
+| :--- | :---: |:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map, GameEngine cơ bản. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC01 và TC07.                                                                              |
+| **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop 30 tick/s, RoomManager, GameRoom). **Đã tích hợp MessageCodec vào ClientSession và GameRoom** (phát snapshot nhị phân 30 Hz, nhận Input, Ping/Pong, RoomList, Chat), 23/23 tests passed. Chưa có Database (JDBC) và Replay.                      |
 | **`tankops-client`** | **~80%** | Đã dựng đầy đủ bộ giao diện Swing (CardLayout với 5 Panel), Renderer đa lớp, SpriteManager, chế độ Singleplayer offline. **Đã hoàn thiện NetworkClient socket TCP (singleton, thread-safe, receiver thread), MessageListener, GameStateStore, InterpolationBuffer**, 10/10 tests passed. Chưa nối phòng động trên LobbyPanel. |
-| **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner. |
-| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database/` và `deploy/` chưa khởi tạo. |
+| **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner.                                                                                                                                                                                                                                                         |
+| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database/` và `deploy/` chưa khởi tạo.                                                                                                                                          |
 
 ---
 
@@ -33,7 +33,6 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 
 #### A. Những gì ĐÃ HOÀN THÀNH
 1. **Mô hình Hướng đối tượng (OOP & SOLID)**:
-   - Tái cấu trúc từ enum sang phân cấp kế thừa đa hình tuân thủ OCP và SRP (Mục 15 trong tài liệu).
    - **`model.common`**:
      - `Entity`: Lớp cơ sở trừu tượng có `id`, tọa độ `Vector2D position`, `width/height`, thuật toán va chạm AABB `intersects(Entity)`.
      - `Vector2D`: Record biểu diễn vector 2 chiều với các hàm tiện ích (`add`, `multiply`).
@@ -43,6 +42,7 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
      - `Tank`: Lớp cha trừu tượng quản lý tốc độ, máu (`health`, `maxHealth`), di chuyển `move()`, bắn `fire()`, và cơ chế trượt băng `slideForward(deltaTime)`.
      - `PlayerTank`: Hỗ trợ nâng cấp sao (`starLevel`), số mạng (`lives`), khiên vô địch (`shielded`), đếm điểm và tự cộng mạng.
      - `EnemyTank`: Lớp cha xe địch, phân nhánh thành 4 lớp cụ thể: `BasicTank`, `FastTank`, `PowerTank`, `ArmorTank`.
+     - `BotState`: Đã áp dụng triệt để State Pattern cho AI Bot qua các lớp Singleton: `PatrolState`, `ChaseState`, `AttackState`.
    - **`model.environment`**:
      - `Environment`: Lớp cha với hợp đồng trừu tượng `canTankPass()`, `canBulletPass()`, `takeHit(starLevel)`.
      - Các lớp con đa hình: `BrickWall` (bị phá hủy bởi đạn), `SteelWall` (chỉ đạn cấp sao cao mới xuyên được), `Water` (xe không đi qua được, đạn bay qua được), `Trees` (xe và đạn đi qua được), `Ice` (gây hiệu ứng trượt).
@@ -54,7 +54,7 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
    - `MapLoader`: Đọc và phân tích file bản đồ text dạng ma trận (`stage1.map`).
 3. **Bộ máy trò chơi (`common.engine`)**:
    - `GameState`: Nơi lưu trữ danh sách xe tăng, đạn, địa hình, vật phẩm và trạng thái kết thúc trận `isGameOver`.
-   - `GameEngine`: Nạp môi trường, `spawnPlayers()`, `spawnBots()`, nhận di chuyển `handleMoveEvent()`, kiểm tra va chạm tường và rollback (TC02).
+   - `GameEngine`: Nạp môi trường, `spawnPlayers()`, `spawnBots()`, nhận di chuyển `handleMoveEvent()`, kiểm tra va chạm tường và rollback (TC02), tích hợp thành công cơ chế quán tính trượt băng (Ice Slide) mượt mà cho cả khi giữ phím và thả phím. Đã hoàn thiện logic bắn đạn `handleShootEvent()`, tính toán tọa độ đạn bay `updateBullets()`, xử lý va chạm chính xác giữa Đạn - Tường (trừ độ bền môi trường TC03, TC04) và Đạn - Xe Tăng (trừ máu/mạng TC01). Đã có `onKillCallback()` để báo sự kiện hạ gục về cho Server tính điểm. Tự động kiểm tra điều kiện kết thúc trận `checkGameOverCondition()`.Tích hợp Bot logic tính toán khoảng cách tự động để đổi trạng thái Bot `updateBots()`.
 4. **Giao thức mạng hoàn chỉnh (`common.net`) - Phân chia theo Package khoa học**:
    - **`tankops.common.net.Message`**: Hợp đồng gốc chuẩn cho toàn bộ bản tin mạng (`byte getTypeId()`).
    - **`tankops.common.net.codec`**:
@@ -130,25 +130,25 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 
 ## 3. MA TRẬN ĐỐI CHIẾU TEST CASES (THEO MỤC 11 GOOGLE DOCS)
 
-| Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code | Trạng thái |
-| :---: | :--- | :--- | :--- | :---: |
-| **TC01** | Bullet hits tank | Đạn trúng xe: Xe mất máu, đạn biến mất | Đang chờ Game Engine (`handleShootEvent`, update đạn) | 🔴 Chưa đạt |
-| **TC02** | Tank hits wall | Xe đụng tường cản: Xe dừng lại, rollback vị trí | Đã có trong `GameEngineTest` (`testTC02_TankCollidesWithWallAndRollsBack`) | 🟢 Đạt |
-| **TC03** | Bullet destroys brick wall | Đạn phá tường gạch: Tường bị vỡ/biến mất | Đang chờ Game Engine xử lý va chạm đạn | 🔴 Chưa đạt |
-| **TC04** | Bullet hits steel wall | Đạn đụng tường thép: Tường giữ nguyên, đạn vỡ | Đang chờ Game Engine xử lý va chạm đạn | 🔴 Chưa đạt |
-| **TC05** | Tank death & respawn | Máu = 0: Tính mạng/kill, hồi sinh sau thời gian trễ | Chưa có test tự động trong GameEngine | 🔴 Chưa đạt |
-| **TC06** | Protocol round trip | Mã hóa rồi giải mã các loại Message: Giữ nguyên dữ liệu | **Đã hoàn thành 100% trong `MessageCodecTest` & các sub-suites (30 tests)** | 🟢 Đạt |
-| **TC07** | Malformed message | Gửi byte rác/bị lỗi: Server từ chối không crash | **Đã hoàn thành 100% trong `MessageCodecTest` (8 tests fuzzing/chống DoS)** | 🟢 Đạt |
-| **TC08** | Join room | Gửi JOIN_ROOM: Xuất hiện trong danh sách phòng | **Đã hoàn thành trong `NetworkClientTest` & `ClientSession` qua Socket thật** | 🟢 Đạt |
-| **TC09** | Room full | Người thứ 6 vào phòng 5 chỗ: Báo lỗi từ chối | Đã có trong `RoomManagerTest` (`tc09_roomFull_sixthPlayerRefused`) | 🟢 Đạt |
-| **TC10** | Concurrent join race | 50 người cùng tranh 1 chỗ: Duy nhất 1 người thành công | Đã có trong `RoomManagerTest` (`tc10_concurrentJoin_exactlyOneSucceeds`) | 🟢 Đạt |
-| **TC11** | Disconnect mid-game | Giết tiến trình client: Trận đấu vẫn tiếp diễn, xóa xe client | Đã có dọn dẹp an toàn ở `ClientSession.cleanup` | 🟡 Cần viết integration test |
-| **TC12** | Client consistency | Nhiều client cùng chơi nhìn thấy một trạng thái thế giới | Chờ nối giao diện Multiplayer UI | 🔴 Chưa đạt |
-| **TC13** | Save match result | Trận đấu xong: Lưu các bản ghi match & players trong 1 transaction | Chờ Database module (`MatchRepository`) | 🔴 Chưa đạt |
-| **TC14** | Transaction rollback | Cố tình lỗi khi lưu kết quả: Không lưu dữ liệu rác | Chờ Database module (`MatchRepository`) | 🔴 Chưa đạt |
-| **TC15** | Leaderboard query | Đọc top N người chơi theo điểm | Chờ Database module (`PlayerRepository`) | 🔴 Chưa đạt |
-| **TC16** | Replay playback | Ghi trận đấu ra file nhị phân và đọc lại phát lại | Chờ Replay module (`ReplayRecorder`/`Player`) | 🔴 Chưa đạt |
-| **TC17** | GUI key input | Nhấn phím WASD/bắn: Xe phản hồi ngay, không giật lag | Đã test thực tế trên Singleplayer GUI | 🟢 Đạt |
+| Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code                                                               | Trạng thái |
+| :---: | :--- | :--- |:------------------------------------------------------------------------------------| :---: |
+| **TC01** | Bullet hits tank | Đạn trúng xe: Xe mất máu, đạn biến mất | Đã có trong `GameEngineTest` (`testTC01_BulletHitsEnemy`)                           | 🟢 Đạt |
+| **TC02** | Tank hits wall | Xe đụng tường cản: Xe dừng lại, rollback vị trí | Đã có trong `GameEngineTest` (`testTC02_TankCollidesWithWallAndRollsBack`)          | 🟢 Đạt |
+| **TC03** | Bullet destroys brick wall | Đạn phá tường gạch: Tường bị vỡ/biến mất | Đã có trong `GameEngineTest` (`testTC03_BulletCollidesWithObstacleWallAndRemoves`)  | 🟢 Đạt |
+| **TC04** | Bullet hits steel wall | Đạn đụng tường thép: Tường giữ nguyên, đạn vỡ | Đã có trong `GameEngineTest` (`testTC04_BulletPassesThroughPassableEnvironment`)  | 🟢 Đạt |
+| **TC05** | Tank death & respawn | Máu = 0: Tính mạng/kill, hồi sinh sau thời gian trễ | CĐã có trong `GameEngineTest` (`testTC05_PlayerTankRespawnsWhenLivesRemain `) | 🟢 Đạt |
+| **TC06** | Protocol round trip | Mã hóa rồi giải mã các loại Message: Giữ nguyên dữ liệu | **Đã hoàn thành 100% trong `MessageCodecTest` & các sub-suites (30 tests)**         | 🟢 Đạt |
+| **TC07** | Malformed message | Gửi byte rác/bị lỗi: Server từ chối không crash | **Đã hoàn thành 100% trong `MessageCodecTest` (8 tests fuzzing/chống DoS)**         | 🟢 Đạt |
+| **TC08** | Join room | Gửi JOIN_ROOM: Xuất hiện trong danh sách phòng | **Đã hoàn thành trong `NetworkClientTest` & `ClientSession` qua Socket thật**       | 🟢 Đạt |
+| **TC09** | Room full | Người thứ 6 vào phòng 5 chỗ: Báo lỗi từ chối | Đã có trong `RoomManagerTest` (`tc09_roomFull_sixthPlayerRefused`)                  | 🟢 Đạt |
+| **TC10** | Concurrent join race | 50 người cùng tranh 1 chỗ: Duy nhất 1 người thành công | Đã có trong `RoomManagerTest` (`tc10_concurrentJoin_exactlyOneSucceeds`)            | 🟢 Đạt |
+| **TC11** | Disconnect mid-game | Giết tiến trình client: Trận đấu vẫn tiếp diễn, xóa xe client | Đã có dọn dẹp an toàn ở `ClientSession.cleanup`                                     | 🟡 Cần viết integration test |
+| **TC12** | Client consistency | Nhiều client cùng chơi nhìn thấy một trạng thái thế giới | Chờ nối giao diện Multiplayer UI                                                    | 🔴 Chưa đạt |
+| **TC13** | Save match result | Trận đấu xong: Lưu các bản ghi match & players trong 1 transaction | Chờ Database module (`MatchRepository`)                                             | 🔴 Chưa đạt |
+| **TC14** | Transaction rollback | Cố tình lỗi khi lưu kết quả: Không lưu dữ liệu rác | Chờ Database module (`MatchRepository`)                                             | 🔴 Chưa đạt |
+| **TC15** | Leaderboard query | Đọc top N người chơi theo điểm | Chờ Database module (`PlayerRepository`)                                            | 🔴 Chưa đạt |
+| **TC16** | Replay playback | Ghi trận đấu ra file nhị phân và đọc lại phát lại | Chờ Replay module (`ReplayRecorder`/`Player`)                                       | 🔴 Chưa đạt |
+| **TC17** | GUI key input | Nhấn phím WASD/bắn: Xe phản hồi ngay, không giật lag | Đã test thực tế trên Singleplayer GUI                                               | 🟢 Đạt |
 
 ---
 
@@ -188,23 +188,12 @@ Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và
 ---
 
 ### ⚙️ Role 2: Game Engine Developer (`tankops-common/engine`, `common/model`)
-**Trách nhiệm chính:** Thực thể, vật lý, phát hiện va chạm, AI bots.
+**Trách nhiệm chính:** Thực thể, vật lý, phát hiện va chạm, AI bots, powerups.
 
-* **Nhiệm vụ 1: Hoàn thiện Logic Đạn bay & Va chạm (Đạt TC01, TC03, TC04, TC05)**:
-  - Triển khai phương thức `GameEngine.handleShootEvent(String playerId)`: Kiểm tra thời gian hồi chiêu (cooldown) và số đạn tối đa cho phép trên màn hình của xe; tạo đối tượng `Bullet` thêm vào `GameState`.
-  - Trong `GameEngine.update(double deltaTime)`:
-    + Cập nhật tọa độ của từng viên đạn: $pos = pos + dir \times speed \times deltaTime$.
-    + Xóa đạn khi bay ra ngoài biên bản đồ.
-    + **Va chạm Đạn - Xe (TC01, TC05):** Kiểm tra `bullet.intersects(tank)`. Trừ máu `tank.takeDamage()`, xóa đạn. Nếu xe nổ ($máu \le 0$), sinh sự kiện `EventMessage(TANK_DESTROYED)` và cộng điểm cho chủ nhân viên đạn.
-    + **Va chạm Đạn - Tường Gạch (TC03):** `BrickWall` bị phá hủy từng ô hoặc toàn phần, đạn biến mất.
-    + **Va chạm Đạn - Tường Thép (TC04):** Đạn thường bị vỡ, tường nguyên vẹn; đạn cấp sao cao (`starLevel >= 3`) phá hủy được thép.
-    + **Va chạm Đạn - Đạn:** Hai viên đạn đối đầu triệt tiêu lẫn nhau.
-* **Nhiệm vụ 2: Hệ thống Vật phẩm (PowerUp Drop & Pickup)**:
+* **Nhiệm vụ 1: Hệ thống Vật phẩm (PowerUp Drop & Pickup)**:
   - Sinh ngẫu nhiên 6 loại PowerUp (`Star`, `Helmet`, `Grenade`, `Shovel`, `Timer`, `TankPowerUp`).
   - Khi xe tăng chạm vật phẩm: Kích hoạt `powerUp.applyEffect(playerTank)` theo Strategy Pattern.
-* **Nhiệm vụ 3: Bot AI (Finite State Machine)**:
-  - Cài đặt 3 trạng thái cho xe bot: `Patrol` (tuần tra ngẫu nhiên), `Chase` (bám theo người chơi), `Attack` (ngắm bắn khi thẳng hàng).
-* **Nhiệm vụ 4: Thuật toán chia lưới không gian (`SpatialGrid`) cho Thí nghiệm E2**:
+* **Nhiệm vụ 2: Thuật toán chia lưới không gian (`SpatialGrid`) cho Thí nghiệm E2**:
   - Cài đặt cấu trúc dữ liệu `SpatialGrid` (lưới $64 \times 64$) để tối ưu va chạm từ $O(N^2)$ xuống gần $O(N)$ phục vụ đo đạc hiệu năng với 100-1000 entities.
 
 ---
