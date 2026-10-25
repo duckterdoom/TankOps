@@ -6,15 +6,14 @@ import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.environment.Environment;
 import tankops.common.model.environment.Ice;
+import tankops.common.model.powerups.*;
+import tankops.common.model.powerups.Timer;
 import tankops.common.model.tank.*;
 import tankops.common.model.tank.state.AttackState;
 import tankops.common.model.tank.state.ChaseState;
 import tankops.common.model.tank.state.PatrolState;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -23,9 +22,13 @@ public class GameEngine {
     private final GameState gameState = new GameState();
     private final Random random = new Random();
     private final Map<String, Direction> playerMoveDirections = new ConcurrentHashMap<>();
+    private final List<Vector2D> powerUpSpawnPoints;
 
     private double mapWidth = 800.0;
     private double mapHeight = 600.0;
+
+    private int powerUpSpawnTimer = 0;
+    private static final int SPAWN_INTERVAL_TICKS = 400;
 
 
     // Callback dùng để báo cho GameRoom biết khi có player hạ gục tank khác
@@ -36,10 +39,17 @@ public class GameEngine {
             if(gameMap.getEnvironments() != null){
                 this.gameState.setEnvironments(gameMap.getEnvironments());
             }
+            if(gameMap.getPowerUpSpawnPoints() != null){
+                this.powerUpSpawnPoints = gameMap.getPowerUpSpawnPoints();
+            }else {
+                this.powerUpSpawnPoints = new ArrayList<>();
+            }
             if (gameMap.getCols() > 0 && gameMap.getRows() > 0) {
                 this.mapWidth = gameMap.getCols() * Environment.TILE_SIZE;
                 this.mapHeight = gameMap.getRows() * Environment.TILE_SIZE;
             }
+        }else{
+            this.powerUpSpawnPoints = new ArrayList<>();
         }
 
     }
@@ -96,6 +106,44 @@ public class GameEngine {
         };
     }
 
+    private void spawnPowerUp() {
+        if (powerUpSpawnPoints == null || powerUpSpawnPoints.isEmpty()) {
+            return;
+        }
+
+        powerUpSpawnTimer++;
+        if (powerUpSpawnTimer >= SPAWN_INTERVAL_TICKS) {
+            powerUpSpawnTimer = 0; // Reset bộ đếm
+
+            // Chọn ngẫu nhiên một tọa độ từ danh sách các điểm spawn của map
+            Vector2D spawnPos = powerUpSpawnPoints.get(random.nextInt(powerUpSpawnPoints.size()));
+
+            String powerUpId = "powerup_" + System.currentTimeMillis();
+
+
+            PowerUp powerUp = createRandomPowerUp(powerUpId, spawnPos);
+
+            // add powerup to gamestate
+            if (powerUp != null) {
+                this.gameState.addPowerUp(powerUp);
+            }
+        }
+    }
+
+    // Hàm phụ trợ tạo ngẫu nhiên các loại PowerUp
+    private PowerUp createRandomPowerUp(String id, Vector2D position) {
+        int type = random.nextInt(6);
+
+        return switch (type) {
+            case 0 -> new Grenade(id, position);
+            case 1 -> new Helmet(id, position);
+            case 2 -> new Shovel(id, position);
+            case 3 -> new Star(id, position);
+            case 4 -> new TankPowerUp(id, position);
+            default -> new Timer(id, position);
+        };
+    }
+
     public void handleMoveEvent(String playerId, Direction direction) {
         if (direction == null) {
             playerMoveDirections.remove(playerId);
@@ -131,13 +179,20 @@ public class GameEngine {
         updatePlayerTanks();
         updateBots();
         updateBullets();
+        spawnPowerUp();
+        checkPowerUpCollisions();
         checkGameOverCondition();
         cleanupDestroyedTanks();
     }
     private void updatePlayerTanks() {
         for(Tank tank : this.gameState.getTanks()){
             tank.setMoving(false);
+
+            if (tank instanceof PlayerTank playerTank && !playerTank.isDestroyed()) {
+                playerTank.updateShield();
+            }
         }
+
         playerMoveDirections.forEach((playerId, direction) -> {
             Tank tank = this.gameState.getTankById(playerId);
             if (tank != null && !tank.isDestroyed()) {
@@ -224,7 +279,7 @@ public class GameEngine {
 
     }
 
-    public boolean checkWallCollision(Tank tank){
+    private boolean checkWallCollision(Tank tank){
         for(Environment env : this.gameState.getEnvironments()){
             if(!env.canTankPass() && tank.intersects(env)){
                 return true;
@@ -295,10 +350,51 @@ public class GameEngine {
         }
         return false;
     }
+    private void checkPowerUpCollisions() {
+        if (this.gameState.getPowerUps() == null || this.gameState.getPowerUps().isEmpty()) {
+            return;
+        }
+
+        Iterator<PowerUp> powerUpIterator = this.gameState.getPowerUps().iterator();
+
+        while (powerUpIterator.hasNext()) {
+            PowerUp powerUp = powerUpIterator.next();
+
+            // Duyệt qua tất cả các xe tăng đang sống trên map
+            for (Tank tank : this.gameState.getTanks()) {
+                if (tank.isDestroyed()) {
+                    continue;
+                }
+
+                // Kiểm tra nếu xe tăng va chạm với power-up
+                if (tank.intersects(powerUp)) {
+
+                    // Nếu xe tăng là PlayerTank thì kích hoạt hiệu ứng của item
+                    if (tank instanceof PlayerTank playerTank) {
+                        powerUp.applyEffect(playerTank, this.gameState);
+
+                        // Xóa power-up khỏi danh sách (vật phẩm biến mất sau khi bị ăn)
+                        powerUpIterator.remove();
+                        break;
+                    }
+
+
+                }
+            }
+        }
+    }
 
     private void updateBots() {
         for (Tank tank : this.gameState.getTanks()) {
             if (tank instanceof EnemyTank bot && !bot.isDestroyed()) {
+                // Cập nhật trạng thái đóng băng của đồng hồ Timer mỗi tick
+                bot.updateFreeze();
+
+                // Nếu bot đang bị đóng băng -> Bỏ qua toàn bộ logic di chuyển và tấn công
+                if (bot.isFrozen()) {
+                    bot.setMoving(false);
+                    continue;
+                }
 
                 PlayerTank targetPlayer = findNearestPlayer(bot);
                 double distance = (targetPlayer != null) ? calculateDistance(bot.getPosition(), targetPlayer.getPosition()) : Double.MAX_VALUE;

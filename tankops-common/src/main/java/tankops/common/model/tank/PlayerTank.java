@@ -8,6 +8,8 @@ import tankops.common.model.common.Vector2D;
 public class PlayerTank extends Tank {
     private static final int INITIAL_LIVES = 1;
     private static final int EXTRA_LIFE_SCORE = 20_000;
+    private int shieldTicksRemaining = 0;
+    private static final int SHIELD_DURATION_TICKS = 800;
 
     private final int playerNumber;
     private int starLevel = 0;
@@ -28,10 +30,26 @@ public class PlayerTank extends Tank {
     public int getStarLevel() { return starLevel; }
     public int getLives() { return lives; }
     public int getScore() { return score; }
-    public boolean isShielded() { return shielded; }
 
-    public void activateShield() { this.shielded = true; }
-    public void deactivateShield() { this.shielded = false; }
+
+    public void activateShield() {
+        this.shielded = true;
+        this.shieldTicksRemaining = SHIELD_DURATION_TICKS;
+        System.out.println("Shield activated");
+    }
+    public void deactivateShield() {
+        this.shielded = false;
+        this.shieldTicksRemaining = 0;
+        System.out.println("Shield deactivated");
+    }
+    public void updateShield() {
+        if (shielded) {
+            shieldTicksRemaining--;
+            if (shieldTicksRemaining <= 0) {
+                deactivateShield();
+            }
+        }
+    }
 
     @Override
     public void takeDamage(int amount) {
@@ -69,11 +87,13 @@ public class PlayerTank extends Tank {
 
     public void upgradeStar() {
         if (starLevel < Bullet.MAX_STAR_LEVEL) starLevel++;
+        System.out.println("upgrade star: " + starLevel);
     }
 
     public void resetPowerLevel() { starLevel = 0; }
 
-    public void addLife() { lives++; }
+    public void addLife() { lives++;
+        System.out.println("add live" + lives);}
     public void loseLife() { if (lives > 0) lives--; }
 
     public void addScore(int points) {
@@ -83,5 +103,6 @@ public class PlayerTank extends Tank {
             scoreLifeGranted = true;
             addLife();
         }
+        System.out.println(score);
     }
 }

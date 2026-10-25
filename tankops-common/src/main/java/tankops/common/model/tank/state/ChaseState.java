@@ -28,7 +28,7 @@ public class ChaseState implements BotState {
         double dx = target.getPosition().x() - bot.getPosition().x();
         double dy = target.getPosition().y() - bot.getPosition().y();
 
-        // Hướng chính (trục lệch nhiều hơn) và hướng phụ (trục còn lại)
+
         Direction primary = Math.abs(dx) > Math.abs(dy)
                 ? (dx > 0 ? Direction.RIGHT : Direction.LEFT)
                 : (dy > 0 ? Direction.DOWN : Direction.UP);

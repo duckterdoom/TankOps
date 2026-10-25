@@ -58,7 +58,7 @@ class GameEngineTest {
 
     @BeforeEach
     void setUp() {
-        GameMap emptyMap = new GameMap(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), 25, 19);
+        GameMap emptyMap = new GameMap(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), 25, 19);
 
         gameEngine = new GameEngine(emptyMap);
         gameEngine.spawnPlayers(List.of(playerId), List.of(startPos));
