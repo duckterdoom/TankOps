@@ -4,6 +4,7 @@ import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import tankops.common.model.common.Direction;
 
 public class  InputHandler {
     private boolean up, down, left, right;
@@ -73,6 +74,14 @@ public class  InputHandler {
 
         component.addMouseListener(mouseAdapter);
         component.addMouseMotionListener(mouseAdapter);
+    }
+
+    public Direction getMovementDirection() {
+        if (up) return Direction.UP;
+        if (down) return Direction.DOWN;
+        if (left) return Direction.LEFT;
+        if (right) return Direction.RIGHT;
+        return null;
     }
 
     public boolean isUp() {return up;}

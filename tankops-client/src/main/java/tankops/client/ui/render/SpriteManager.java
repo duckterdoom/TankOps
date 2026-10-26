@@ -78,6 +78,17 @@ public class SpriteManager {
                 }
             }
         }
+
+        loadPowerUp("helmet");
+        loadPowerUp("grenade");
+        loadPowerUp("star");
+        loadPowerUp("tank");
+        loadPowerUp("timer");
+        loadPowerUp("shovel");
+    }
+
+    private void loadPowerUp(String name) {
+        loadSprite("powerup_" + name, "/sprites/powerups/" + name + ".png");
     }
 
     private void loadTile(String name) {
