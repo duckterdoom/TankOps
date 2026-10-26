@@ -1,7 +1,7 @@
 # BÁO CÁO PHÂN TÍCH HIỆN TRẠNG & KẾ HOẠCH HÀNH ĐỘNG HỆ THỐNG TANKOPS
 **Đối chiếu giữa Tài liệu Thiết kế Kiến trúc (Google Docs) và Hiện trạng Mã nguồn (Source Code)**
 
-*Cập nhật lần cuối: 21/10/2026*  
+*Cập nhật lần cuối: 26/10/2026*  
 *Dự án: TankOps - Multiplayer Real-time Tank Battle*  
 *Môi trường chuẩn: Java 21 (LTS), Maven Multi-module, Swing GUI, TCP Binary Protocol, SQLite JDBC*
 
@@ -19,7 +19,7 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 
 | Module / Thành phần | Mức độ hoàn thành | Đánh giá hiện trạng                                                                                                                                                                                                                                                                                                           |
 | :--- | :---: |:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map, GameEngine cơ bản. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC01 và TC07.                                                                              |
+| **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map động, GameEngine đã tích hợp trọn vẹn gameplay logic. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC01 và TC07.                                            |
 | **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop 30 tick/s, RoomManager, GameRoom). **Đã tích hợp MessageCodec vào ClientSession và GameRoom** (phát snapshot nhị phân 30 Hz, nhận Input, Ping/Pong, RoomList, Chat), 23/23 tests passed. Chưa có Database (JDBC) và Replay.                      |
 | **`tankops-client`** | **~80%** | Đã dựng đầy đủ bộ giao diện Swing (CardLayout với 5 Panel), Renderer đa lớp, SpriteManager, chế độ Singleplayer offline. **Đã hoàn thiện NetworkClient socket TCP (singleton, thread-safe, receiver thread), MessageListener, GameStateStore, InterpolationBuffer**, 10/10 tests passed. Chưa nối phòng động trên LobbyPanel. |
 | **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner.                                                                                                                                                                                                                                                         |
@@ -42,7 +42,7 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
      - `Tank`: Lớp cha trừu tượng quản lý tốc độ, máu (`health`, `maxHealth`), di chuyển `move()`, bắn `fire()`, và cơ chế trượt băng `slideForward(deltaTime)`.
      - `PlayerTank`: Hỗ trợ nâng cấp sao (`starLevel`), số mạng (`lives`), khiên vô địch (`shielded`), đếm điểm và tự cộng mạng.
      - `EnemyTank`: Lớp cha xe địch, phân nhánh thành 4 lớp cụ thể: `BasicTank`, `FastTank`, `PowerTank`, `ArmorTank`.
-     - `BotState`: Đã áp dụng triệt để State Pattern cho AI Bot qua các lớp Singleton: `PatrolState`, `ChaseState`, `AttackState`.
+     - `state.BotState`: Đã áp dụng triệt để State Pattern cho AI Bot qua các lớp Singleton: `PatrolState`, `ChaseState`, `AttackState`.
    - **`model.environment`**:
      - `Environment`: Lớp cha với hợp đồng trừu tượng `canTankPass()`, `canBulletPass()`, `takeHit(starLevel)`.
      - Các lớp con đa hình: `BrickWall` (bị phá hủy bởi đạn), `SteelWall` (chỉ đạn cấp sao cao mới xuyên được), `Water` (xe không đi qua được, đạn bay qua được), `Trees` (xe và đạn đi qua được), `Ice` (gây hiệu ứng trượt).
@@ -50,11 +50,11 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
      - `PowerUp`: Lớp cha đóng gói mẫu Strategy qua hàm `applyEffect(PlayerTank)`.
      - Đã triển khai đủ 6 lớp vật phẩm: `Star`, `Helmet`, `Grenade`, `Shovel`, `Timer`, `TankPowerUp`.
 2. **Hệ thống Bản đồ (`common.map`)**:
-   - `GameMap`: Lưu trữ đối tượng môi trường, điểm spawn người chơi (`playerSpawnPoints`) và địch (`enemySpawnPoints`).
-   - `MapLoader`: Đọc và phân tích file bản đồ text dạng ma trận (`stage1.map`).
+   - `GameMap`: Lưu trữ đối tượng môi trường, điểm spawn người chơi (`playerSpawnPoints`) và địch (`enemySpawnPoints`) và vật phẩm (`powerUpSpawnPoints`).
+   - `MapLoader`: Đọc và phân tích file bản đồ text dạng ma trận (`map_single.map`, `map_multi.map`).
 3. **Bộ máy trò chơi (`common.engine`)**:
    - `GameState`: Nơi lưu trữ danh sách xe tăng, đạn, địa hình, vật phẩm và trạng thái kết thúc trận `isGameOver`.
-   - `GameEngine`: Nạp môi trường, `spawnPlayers()`, `spawnBots()`, nhận di chuyển `handleMoveEvent()`, kiểm tra va chạm tường và rollback (TC02), tích hợp thành công cơ chế quán tính trượt băng (Ice Slide) mượt mà cho cả khi giữ phím và thả phím. Đã hoàn thiện logic bắn đạn `handleShootEvent()`, tính toán tọa độ đạn bay `updateBullets()`, xử lý va chạm chính xác giữa Đạn - Tường (trừ độ bền môi trường TC03, TC04) và Đạn - Xe Tăng (trừ máu/mạng TC01). Đã có `onKillCallback()` để báo sự kiện hạ gục về cho Server tính điểm. Tự động kiểm tra điều kiện kết thúc trận `checkGameOverCondition()`.Tích hợp Bot logic tính toán khoảng cách tự động để đổi trạng thái Bot `updateBots()`.
+   - `GameEngine`: Nạp môi trường, `spawnPlayers()`, `spawnBots()`, nhận di chuyển `handleMoveEvent()`, kiểm tra va chạm tường và rollback (TC02), tích hợp thành công cơ chế quán tính trượt băng (Ice Slide) mượt mà cho cả khi giữ phím và thả phím. Đã hoàn thiện logic bắn đạn `handleShootEvent()`, tính toán tọa độ đạn bay `updateBullets()`, xử lý va chạm chính xác giữa Đạn - Tường (trừ độ bền môi trường TC03, TC04) và Đạn - Xe Tăng (trừ máu/mạng TC01). Đã có `onKillCallback()` để báo sự kiện hạ gục về cho Server tính điểm. Tự động kiểm tra điều kiện kết thúc trận `checkGameOverCondition()`.Tích hợp Bot logic tính toán khoảng cách tự động để đổi trạng thái Bot `updateBots()`.Tích hợp bộ đếm thời gian `powerUpSpawnTimer` và khoảng thời gian sinh vật phẩm định kỳ (`SPAWN_INTERVAL_TICKS`). Sinh ngẫu nhiên 6 loại vật phẩm (Grenade, Helmet, Shovel, Star, TankPowerUp, Timer) tại các điểm spawn của bản đồ. Tích hợp phương thức `checkPowerUpCollisions()` xử lý va chạm và kích hoạt hiệu ứng qua Strategy Pattern (`powerUp.applyEffect(playerTank, this.gameState)`).
 4. **Giao thức mạng hoàn chỉnh (`common.net`) - Phân chia theo Package khoa học**:
    - **`tankops.common.net.Message`**: Hợp đồng gốc chuẩn cho toàn bộ bản tin mạng (`byte getTypeId()`).
    - **`tankops.common.net.codec`**:
@@ -180,7 +180,7 @@ Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và
   - Trong nhịp `tick()` của `GameRoom`, nếu `cmd.shoot() == true`, gọi `engine.handleShootEvent(cmd.playerId())`.
 * **Nhiệm vụ 2: Cơ chế phòng chơi hoàn chỉnh**:
   - Hỗ trợ chủ phòng bấm "Bắt đầu trận đấu" (`StartGameMessage`), kiểm tra số lượng $\ge 2$ người chơi hoặc tự động chèn bot.
-  - Tự động nạp map được chọn (`stage1.map`, `stage2.map`) thay vì hardcode.
+  - Tự động nạp map được chọn (`map_multi.map`) thay vì hardcode.
   - Dọn dẹp phòng sạch sẽ khi trận đấu kết thúc hoặc người chơi cuối cùng rời đi (tránh rò rỉ bộ nhớ/thread).
 * **Nhiệm vụ 3: Tích hợp bất đồng bộ với Database & Replay**:
   - Khi trận kết thúc (`GameRoom.finishGame()`), tạo một tác vụ nền (`CompletableFuture`) gửi bảng điểm sang `MatchRepository` để lưu vào SQLite mà không làm giật lag vòng tick của các phòng khác.
@@ -190,11 +190,6 @@ Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và
 ### ⚙️ Role 2: Game Engine Developer (`tankops-common/engine`, `common/model`)
 **Trách nhiệm chính:** Thực thể, vật lý, phát hiện va chạm, AI bots, powerups.
 
-* **Nhiệm vụ 1: Hệ thống Vật phẩm (PowerUp Drop & Pickup)**:
-  - Sinh ngẫu nhiên 6 loại PowerUp (`Star`, `Helmet`, `Grenade`, `Shovel`, `Timer`, `TankPowerUp`).
-  - Khi xe tăng chạm vật phẩm: Kích hoạt `powerUp.applyEffect(playerTank)` theo Strategy Pattern.
-* **Nhiệm vụ 2: Thuật toán chia lưới không gian (`SpatialGrid`) cho Thí nghiệm E2**:
-  - Cài đặt cấu trúc dữ liệu `SpatialGrid` (lưới $64 \times 64$) để tối ưu va chạm từ $O(N^2)$ xuống gần $O(N)$ phục vụ đo đạc hiệu năng với 100-1000 entities.
 
 ---
 

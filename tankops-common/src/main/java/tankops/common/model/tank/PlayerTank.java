@@ -32,6 +32,7 @@ public class PlayerTank extends Tank {
     public int getScore() { return score; }
 
 
+    public boolean isShielded() { return shielded; }
     public void activateShield() {
         this.shielded = true;
         this.shieldTicksRemaining = SHIELD_DURATION_TICKS;
