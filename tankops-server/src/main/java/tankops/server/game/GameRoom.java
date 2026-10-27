@@ -137,7 +137,9 @@ public class GameRoom {
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
-            String name = p.getPlayerName();
+            String name = (p.getPlayerName() != null && !p.getPlayerName().isBlank())
+                    ? p.getPlayerName()
+                    : p.getPlayerId();
             ids.add(name);
             scores.put(name, 0);
         }
@@ -292,11 +294,15 @@ public class GameRoom {
         GameState gameState = engine.getGameState();
         List<TankSnapshot> tankSnapshots = new ArrayList<>();
         for (Tank t : gameState.getTanks()) {
+            int lives = 1;
+            int score = 0;
             int starLevel = 0;
             boolean shielded = false;
             if (t instanceof PlayerTank pt) {
                 starLevel = pt.getStarLevel();
                 shielded = pt.isShielded();
+                lives = pt.getLives();
+                score = pt.getScore();
             }
             tankSnapshots.add(new TankSnapshot(
                     t.getId(),
@@ -308,7 +314,9 @@ public class GameRoom {
                     starLevel,
                     shielded,
                     t.isMoving(),
-                    t.isDestroyed()
+                    t.isDestroyed(),
+                    lives,
+                    score
             ));
         }
 
