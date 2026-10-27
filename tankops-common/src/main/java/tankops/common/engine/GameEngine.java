@@ -144,7 +144,20 @@ public class GameEngine {
 
     // Hàm phụ trợ tạo ngẫu nhiên các loại PowerUp
     private PowerUp createRandomPowerUp(String id, Vector2D position) {
-        int type = random.nextInt(6);
+        // Tự động quét xem trong map có Bot (EnemyTank) hay không
+        boolean hasBots = false;
+        if (gameState.getTanks() != null) {
+            for (Tank t : gameState.getTanks()) {
+                if (t instanceof EnemyTank) {
+                    hasBots = true;
+                    break;
+                }
+            }
+        }
+
+        // Nếu có bot: random từ 0 đến 5 (có Timer). Không có bot: random từ 0 đến 4 (bỏ Timer).
+        int bound = hasBots ? 6 : 5;
+        int type = random.nextInt(bound);
 
         return switch (type) {
             case 0 -> new Grenade(id, position);
