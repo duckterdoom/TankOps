@@ -2,6 +2,8 @@ package tankops.client.state;
 
 import tankops.client.net.MessageListener;
 import tankops.common.net.Message;
+import tankops.common.net.game.EnvironmentSnapshot;
+import tankops.common.net.game.PowerUpSnapshot;
 import tankops.common.net.game.SnapshotMessage;
 import tankops.common.net.game.GameOverMessage;
 import tankops.common.net.lobby.JoinResponseMessage;
@@ -131,6 +133,18 @@ public class GameStateStore implements MessageListener {
     public List<BulletSnapshot> getBullets() {
         SnapshotMessage snap = latestSnapshot.get();
         return snap != null ? snap.bullets() : Collections.emptyList();
+    }
+
+    /** Vật phẩm đang nằm trên bản đồ (do server gửi trong snapshot). */
+    public List<PowerUpSnapshot> getPowerUps() {
+        SnapshotMessage snap = latestSnapshot.get();
+        return snap != null ? snap.powerUps() : Collections.emptyList();
+    }
+
+    /** Tường gạch/thép còn lại (do server gửi trong snapshot). */
+    public List<EnvironmentSnapshot> getEnvironments() {
+        SnapshotMessage snap = latestSnapshot.get();
+        return snap != null ? snap.environments() : Collections.emptyList();
     }
 
     public int getCurrentTick() {

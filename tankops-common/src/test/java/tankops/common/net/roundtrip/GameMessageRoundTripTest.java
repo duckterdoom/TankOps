@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import tankops.common.model.common.Direction;
 import tankops.common.net.codec.ProtocolException;
 import tankops.common.net.game.BulletSnapshot;
+import tankops.common.net.game.EnvironmentSnapshot;
 import tankops.common.net.game.EventMessage;
 import tankops.common.net.game.GameOverMessage;
 import tankops.common.net.game.InputMessage;
+import tankops.common.net.game.PowerUpSnapshot;
 import tankops.common.net.game.SnapshotMessage;
 import tankops.common.net.game.TankSnapshot;
 import tankops.common.net.support.NetworkTestSupport;
@@ -81,5 +83,36 @@ class GameMessageRoundTripTest {
         assertEquals("bullet-1", decoded.targetId());
         assertEquals(50.0, decoded.x());
         assertEquals(80.0, decoded.y());
+    }
+
+    @Test
+    @DisplayName("0x07: SnapshotMessage round-trip kèm vật phẩm (PowerUpSnapshot) và tường (EnvironmentSnapshot)")
+    void testSnapshotMessageWithPowerUpsAndEnvironments() throws ProtocolException {
+        TankSnapshot tank = new TankSnapshot("tank-1", 100.0, 150.0, Direction.UP, 3, 3, 2, true, true, false);
+        List<PowerUpSnapshot> powerUps = List.of(
+                new PowerUpSnapshot("pu-1", "Star", 64.0, 96.0),
+                new PowerUpSnapshot("pu-2", "Helmet", 320.0, 32.0));
+        List<EnvironmentSnapshot> envs = List.of(
+                new EnvironmentSnapshot("env_2_3", "BrickWall", 96.0, 64.0),
+                new EnvironmentSnapshot("steel_4_5", "SteelWall", 160.0, 128.0));
+        SnapshotMessage original = new SnapshotMessage(
+                77, List.of(tank), List.of(), false, null, powerUps, envs);
+
+        SnapshotMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(2, decoded.powerUps().size());
+        assertEquals("Star", decoded.powerUps().get(0).kind());
+        assertEquals(320.0, decoded.powerUps().get(1).x());
+        assertEquals(2, decoded.environments().size());
+        assertEquals("SteelWall", decoded.environments().get(1).kind());
+        assertEquals("env_2_3", decoded.environments().get(0).id());
+    }
+
+    @Test
+    @DisplayName("SnapshotMessage bản 5 tham số (cũ) có danh sách vật phẩm và tường rỗng")
+    void testSnapshotMessageOldConstructorHasEmptyLists() throws ProtocolException {
+        SnapshotMessage original = new SnapshotMessage(1, List.of(), List.of(), false, null);
+        SnapshotMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertTrue(decoded.powerUps().isEmpty());
+        assertTrue(decoded.environments().isEmpty());
     }
 }

@@ -11,11 +11,17 @@ import tankops.common.engine.GameState;
 import tankops.common.map.GameMap;
 import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
+import tankops.common.model.environment.BrickWall;
+import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.SteelWall;
+import tankops.common.model.powerups.PowerUp;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 import tankops.common.net.Message;
 import tankops.common.net.game.BulletSnapshot;
+import tankops.common.net.game.EnvironmentSnapshot;
 import tankops.common.net.game.GameOverMessage;
+import tankops.common.net.game.PowerUpSnapshot;
 import tankops.common.net.game.SnapshotMessage;
 import tankops.common.net.game.TankSnapshot;
 import tankops.common.net.lobby.RoomStateMessage;
@@ -317,12 +323,38 @@ public class GameRoom {
             ));
         }
 
+        // Vật phẩm đang nằm trên bản đồ: server tự chọn trường cần gửi (id, loại, vị trí)
+        List<PowerUpSnapshot> powerUpSnapshots = new ArrayList<>();
+        for (PowerUp p : gameState.getPowerUps()) {
+            powerUpSnapshots.add(new PowerUpSnapshot(
+                    p.getId(),
+                    p.getClass().getSimpleName(),
+                    p.getPosition().x(),
+                    p.getPosition().y()
+            ));
+        }
+
+        // Chỉ gửi tường gạch/thép chưa bị phá (có thể đổi trong ván). Nước, cây, băng không đổi nên không gửi.
+        List<EnvironmentSnapshot> environmentSnapshots = new ArrayList<>();
+        for (Environment env : gameState.getEnvironments()) {
+            if ((env instanceof BrickWall || env instanceof SteelWall) && !env.isDestroyed()) {
+                environmentSnapshots.add(new EnvironmentSnapshot(
+                        env.getId(),
+                        env.getClass().getSimpleName(),
+                        env.getPosition().x(),
+                        env.getPosition().y()
+                ));
+            }
+        }
+
         return new SnapshotMessage(
                 tickCount,
                 tankSnapshots,
                 bulletSnapshots,
                 state == RoomState.FINISHED,
-                winnerId
+                winnerId,
+                powerUpSnapshots,
+                environmentSnapshots
         );
     }
 
