@@ -207,6 +207,22 @@ public final class MessageCodec {
                     out.writeDouble(b.y());
                     writeDirection(out, b.direction());
                 }
+                // Vật phẩm đang nằm trên bản đồ
+                out.writeInt(m.powerUps().size());
+                for (PowerUpSnapshot p : m.powerUps()) {
+                    out.writeUTF(p.id());
+                    out.writeUTF(p.kind());
+                    out.writeDouble(p.x());
+                    out.writeDouble(p.y());
+                }
+                // Tường gạch/thép còn lại
+                out.writeInt(m.environments().size());
+                for (EnvironmentSnapshot e : m.environments()) {
+                    out.writeUTF(e.id());
+                    out.writeUTF(e.kind());
+                    out.writeDouble(e.x());
+                    out.writeDouble(e.y());
+                }
             }
             case GameOverMessage m -> {
                 out.writeUTF(m.winnerId() != null ? m.winnerId() : "");
@@ -317,7 +333,22 @@ public final class MessageCodec {
                         readDirection(in)
                     ));
                 }
-                yield new SnapshotMessage(tick, tanks, bullets, over, winner);
+                int powerUpCount = in.readInt();
+                List<PowerUpSnapshot> powerUps = new ArrayList<>(powerUpCount);
+                for (int i = 0; i < powerUpCount; i++) {
+                    powerUps.add(new PowerUpSnapshot(
+                        in.readUTF(), in.readUTF(), in.readDouble(), in.readDouble()
+                    ));
+                }
+
+                int envCount = in.readInt();
+                List<EnvironmentSnapshot> envs = new ArrayList<>(envCount);
+                for (int i = 0; i < envCount; i++) {
+                    envs.add(new EnvironmentSnapshot(
+                        in.readUTF(), in.readUTF(), in.readDouble(), in.readDouble()
+                    ));
+                }
+                yield new SnapshotMessage(tick, tanks, bullets, over, winner, powerUps, envs);
             }
 
             case GameOverMessage.TYPE_ID -> {

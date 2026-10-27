@@ -10,6 +10,18 @@ import tankops.client.ui.render.GameRenderer;
 import tankops.common.engine.GameState;
 import tankops.common.map.GameMap;
 import tankops.common.map.MapLoader;
+import tankops.common.model.common.Vector2D;
+import tankops.common.model.environment.BrickWall;
+import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.SteelWall;
+import tankops.common.model.powerups.Grenade;
+import tankops.common.model.powerups.Helmet;
+import tankops.common.model.powerups.PowerUp;
+import tankops.common.model.powerups.Shovel;
+import tankops.common.model.powerups.Star;
+import tankops.common.model.powerups.TankPowerUp;
+import tankops.common.net.game.EnvironmentSnapshot;
+import tankops.common.net.game.PowerUpSnapshot;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 
@@ -28,6 +40,7 @@ public class GamePanel extends JPanel {
     private GameStateStore gameStateStore;
 
     private GameState multiMapState;
+    private java.util.List<Environment> multiStaticEnvironments = new java.util.ArrayList<>();
 
     private boolean isMultiplayer = false;
 
@@ -84,7 +97,15 @@ public class GamePanel extends JPanel {
             MapLoader loader = new MapLoader();
             GameMap multiMap = loader.loadMap("/maps/map_multi.map");
             if (multiMap != null) {
-                this.multiMapState.setEnvironments(multiMap.getEnvironments());
+                // Nước, cây, băng không bao giờ đổi trong ván nên client đọc từ file bản đồ.
+                // Tường gạch/thép thì server gửi trong snapshot (có thể bị phá hoặc đổi thành thép).
+                this.multiStaticEnvironments = new java.util.ArrayList<>();
+                for (Environment env : multiMap.getEnvironments()) {
+                    if (!(env instanceof BrickWall) && !(env instanceof SteelWall)) {
+                        this.multiStaticEnvironments.add(env);
+                    }
+                }
+                this.multiMapState.setEnvironments(this.multiStaticEnvironments);
             }
         } catch (Exception e) {
             System.err.println("[GamePanel] Không thể tải bản đồ /maps/map_multi.map: " + e.getMessage());
@@ -245,6 +266,48 @@ public class GamePanel extends JPanel {
         mainFrame.showScreen(ScreenState.RESULTS);
     }
 
+    /**
+     * Đưa tường gạch/thép và vật phẩm do SERVER gửi (trong snapshot) vào multiMapState để vẽ.
+     * Client không tự đoán tường nào bị phá: server là bên quyết định.
+     */
+    private void syncMapFromSnapshot() {
+        if (multiMapState == null || gameStateStore == null) {
+            return;
+        }
+
+        java.util.List<Environment> envs = new java.util.ArrayList<>(multiStaticEnvironments);
+        for (EnvironmentSnapshot e : gameStateStore.getEnvironments()) {
+            Vector2D pos = new Vector2D(e.x(), e.y());
+            if ("SteelWall".equals(e.kind())) {
+                envs.add(new SteelWall(e.id(), pos));
+            } else if ("BrickWall".equals(e.kind())) {
+                envs.add(new BrickWall(e.id(), pos));
+            }
+        }
+        multiMapState.setEnvironments(envs);
+
+        multiMapState.getPowerUps().clear();
+        for (PowerUpSnapshot p : gameStateStore.getPowerUps()) {
+            PowerUp powerUp = createPowerUp(p);
+            if (powerUp != null) {
+                multiMapState.addPowerUp(powerUp);
+            }
+        }
+    }
+
+    private PowerUp createPowerUp(PowerUpSnapshot p) {
+        Vector2D pos = new Vector2D(p.x(), p.y());
+        return switch (p.kind()) {
+            case "Helmet" -> new Helmet(p.id(), pos);
+            case "Grenade" -> new Grenade(p.id(), pos);
+            case "Star" -> new Star(p.id(), pos);
+            case "TankPowerUp" -> new TankPowerUp(p.id(), pos);
+            case "Timer" -> new tankops.common.model.powerups.Timer(p.id(), pos);
+            case "Shovel" -> new Shovel(p.id(), pos);
+            default -> null; // loại lạ: bỏ qua, không làm vỡ giao diện
+        };
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -254,30 +317,7 @@ public class GamePanel extends JPanel {
             if (gameStateStore != null && gameStateStore.isInGame()) {
                 GameState mapState = singleController != null ? singleController.getGameState() : null;
 
-                if (multiMapState != null && gameStateStore.getBullets() != null) {
-                    for (var bSnap : gameStateStore.getBullets()) {
-                        multiMapState.getEnvironments().removeIf(env -> {
-                            // Tường cản đạn (như BrickWall)
-                            if (!env.canBulletPass()) {
-                                double bx = bSnap.x();
-                                double by = bSnap.y();
-                                double ex = env.getPosition().x();
-                                double ey = env.getPosition().y();
-                                double tileSize = tankops.common.model.environment.Environment.TILE_SIZE;
-
-                                // Kiểm tra tọa độ đạn trùng với ô tường
-                                boolean hit = bx >= ex && bx <= ex + tileSize &&
-                                        by >= ey && by <= ey + tileSize;
-
-                                if (hit) {
-                                    env.takeHit(1); // Giảm máu ô tường
-                                }
-                                return env.isDestroyed(); // Xóa khỏi danh sách vẽ khi máu = 0
-                            }
-                            return false;
-                        });
-                    }
-                }
+                syncMapFromSnapshot();
 
                 renderer.renderSnapshots(
                         g2d,
