@@ -182,55 +182,52 @@ public class ClientSession implements Runnable {
             send(new JoinResponseMessage(false, "Tên người chơi không hợp lệ!", join.roomId(), playerId, -1));
             return;
         }
-        this.playerName = requestName;
 
         try {
             // Việc "tìm/tạo phòng + thêm người" làm trong RoomManager, trong một khối khóa,
             // để không bị phòng bị xóa chen vào giữa (tránh người chơi vào "phòng ma").
             GameRoom room = gameServer.getRoomManager().joinOrCreate(join.roomId(), this);
-            System.out.println("[DEBUG SERVER] Client " + playerId + " muốn vào phòng '" + room.getId() + "' với tên: '" + requestName + "'");
+
+            // Kiểm tra trùng tên trong phòng và đặt tên cho phiên này (làm trong khóa của phòng
+            // để người khác không thấy tên "nửa chừng"). Chưa vào được phòng thì KHÔNG đổi tên.
+            boolean duplicate = false;
             synchronized (room) {
-                for (ClientSession session : room.getPlayers()) {
-                    // Bỏ qua chính session hiện tại
-                    if (!session.getPlayerId().equals(this.getPlayerId())) {
-
-                        String existingName = session.getPlayerName();
-                        System.out.println("[DEBUG SERVER] Đang so sánh '" + requestName + "' với người chơi cũ: '" + existingName + "'");
-
-                        // So sánh không phân biệt hoa thường và xóa bỏ khoảng trắng thừa
-                        if (existingName != null && requestName.equalsIgnoreCase(existingName.trim())) {
-                            System.err.println("[DEBUG SERVER] PHÁT HIỆN TRÙNG TÊN: '" + requestName + "'!");
-
-                            // Kick khỏi phòng & reset tên
-                            room.removePlayer(this);
-                            this.playerName = null;
-
-                            send(new JoinResponseMessage(
-                                    false,
-                                    "Tên '" + requestName + "' đã tồn tại trong phòng! Vui lòng đổi tên.",
-                                    join.roomId(),
-                                    requestName,
-                                    -1
-                            ));
-                            return;
-                        }
+                for (ClientSession other : room.getPlayers()) {
+                    if (other != this && other.playerName != null
+                            && requestName.equalsIgnoreCase(other.playerName.trim())) {
+                        duplicate = true;
+                        break;
                     }
                 }
+                if (!duplicate) {
+                    this.playerName = requestName;
+                }
             }
+
+            if (duplicate) {
+                // Rời phòng qua RoomManager (đúng thứ tự khóa: RoomManager rồi mới tới GameRoom,
+                // nên làm ở NGOÀI khối synchronized(room) ở trên).
+                gameServer.getRoomManager().leaveRoom(room.getId(), this);
+                send(new JoinResponseMessage(false,
+                        "Tên '" + requestName + "' đã tồn tại trong phòng! Vui lòng đổi tên.",
+                        join.roomId(), playerId, -1));
+                return;
+            }
+
             int playerNumber = room.getPlayerCount();
             send(new JoinResponseMessage(true, "Vào phòng thành công", room.getId(), getPlayerName(), playerNumber));
             System.out.println("[ClientSession " + getPlayerName() + "] Đã vào phòng: " + room.getId());
 
-            // 2. BROADCAST CẬP NHẬT DANH SÁCH CHO CẢ PHÒNG
+            // Báo danh sách người trong phòng cho tất cả mọi người
             room.broadcastRoomState();
 
         } catch (RoomFullException e) {
-            send(new JoinResponseMessage(false, "Phòng đã đầy", join.roomId(), getPlayerName(), -1));
+            send(new JoinResponseMessage(false, "Phòng đã đầy", join.roomId(), playerId, -1));
         } catch (IllegalArgumentException | IllegalStateException e) {
             // Không có phòng / phòng đã bắt đầu / đang ở phòng khác / hết số phòng tối đa
-            send(new JoinResponseMessage(false, e.getMessage(), join.roomId(), getPlayerName(), -1));
+            send(new JoinResponseMessage(false, e.getMessage(), join.roomId(), playerId, -1));
         } catch (Exception e) {
-            send(new JoinResponseMessage(false, "Lỗi vào phòng: " + e.getMessage(), join.roomId(), getPlayerName(), -1));
+            send(new JoinResponseMessage(false, "Lỗi vào phòng: " + e.getMessage(), join.roomId(), playerId, -1));
         }
     }
 

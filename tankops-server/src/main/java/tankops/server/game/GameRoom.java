@@ -340,7 +340,7 @@ public class GameRoom {
         }
     }
 
-    // 🟢 THÊM HÀM NÀY VÀO TRONG GAMEROOM.JAVA:
+    // Gửi cho mọi người trong phòng: danh sách tên, chủ phòng và những ai đã READY
     public synchronized void broadcastRoomState() {
         List<String> playerNames = new ArrayList<>();
 
@@ -357,13 +357,8 @@ public class GameRoom {
 
         String hostId = playerNames.isEmpty() ? null : playerNames.get(0);
 
-        // Chuyển Set readyPlayers thành List để gửi đi
+        // Chuyển Set readyPlayers thành List để gửi đi (Set nên không bị lặp tên)
         List<String> readyList = new ArrayList<>(readyPlayers);
-        for (String readyName : readyPlayers) {
-            if (readyName != null && !readyName.isBlank()) {
-                readyList.add(readyName);
-            }
-        }
         // Broadcast bản tin RoomStateMessage (0x0E) tới mọi người chơi trong phòng
         broadcast(new RoomStateMessage(getId(), playerNames, hostId, readyList));
     }
