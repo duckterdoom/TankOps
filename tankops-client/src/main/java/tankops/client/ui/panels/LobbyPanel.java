@@ -321,15 +321,9 @@ public class LobbyPanel extends JPanel {
 
 
     private void createNewRoom() {
-        int newNum = roomListData.size() + 1;
-        String newId = "room_" + newNum;
-
-
         String playerName = getPlayerNameForLobby();
 
-
-        // Gửi bản tin Join/Create phòng mới lên Server
-        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(newId, playerName));
+        NetworkClient.getInstance().sendMessage(new JoinRoomMessage("new", playerName));
     }
 
 
