@@ -22,8 +22,8 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 | **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map động, GameEngine đã tích hợp trọn vẹn gameplay logic. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC01 và TC07.                                            |
 | **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop theo `game.tickRate`, RoomManager, GameRoom). **Đã tích hợp MessageCodec** (snapshot nhị phân, nhận Input gồm cả lệnh bắn, Ping/Pong, RoomList, Chat). **Đã có luồng lobby phía server**: 3 phòng tạo sẵn, vào phòng `room-N`/`auto`/`new`, bắt đầu ván (tạm qua chat `/start`), cộng điểm khi hạ xe. 36/36 tests passed (cần xác nhận lại bằng Maven). Chưa có Database (JDBC) và Replay.                      |
 | **`tankops-client`** | **~80%** | Đã dựng đầy đủ bộ giao diện Swing (CardLayout với 5 Panel), Renderer đa lớp, SpriteManager, chế độ Singleplayer offline. **Đã hoàn thiện NetworkClient socket TCP (singleton, thread-safe, receiver thread), MessageListener, GameStateStore, InterpolationBuffer**, 10/10 tests passed. Chưa nối phòng động trên LobbyPanel. |
-| **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner.                                                                                                                                                                                                                                                         |
-| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database/` và `deploy/` chưa khởi tạo.                                                                                                                                          |
+| **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner. |
+| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database_test/` và `deploy/` chưa khởi tạo. |
 
 ---
 
@@ -133,7 +133,12 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
     - `InterpolationBufferTest`: Kiểm thử công thức LERP, độ mượt nội suy và giới hạn dung lượng hàng đợi snapshot.
 
 ---
-
+### 2.5. Module `database` (Mới cập nhật - Độc lập)
+- **Cấu trúc module riêng biệt**: Tách hoàn toàn khỏi `tankops-server`, khai báo thành một Maven Module độc lập (`database`) trong `pom.xml` gốc, có phân tách rõ ràng hai thư mục `src/main/java` và `src/test/java`.
+- **Cơ chế khởi tạo CSDL tự động**: Sử dụng kịch bản `schema.sql` kết hợp class quản lý kết nối (`Database.java` / `MongoDatabaseManager.java`) để tự động khởi tạo bảng/collection ngay khi khởi chạy chương trình hoặc chạy test.
+- **PlayerRepository & Transaction**: 
+  - Triển khai đầy đủ các thao tác CRUD cho người chơi sử dụng `PreparedStatement` đảm bảo an toàn bảo mật và chống SQL Injection.
+  - Xây dựng các bài kiểm thử tự động (`PlayerRepositoryTest`) đặt trong thư mục `test` để kiểm tra tính năng mà không ảnh hưởng đến mã nguồn chạy chính thức của các thành viên khác trong nhóm.
 ## 3. MA TRẬN ĐỐI CHIẾU TEST CASES (THEO MỤC 11 GOOGLE DOCS)
 
 | Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code                                                               | Trạng thái |
@@ -220,13 +225,13 @@ Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và
 **Trách nhiệm chính:** SQLite JDBC, Replay System, Benchmarking, CI/CD và Build Automation.
 
 * **Nhiệm vụ 1: Tích hợp Cơ sở dữ liệu SQLite (`tankops.server.persistence`)**:
-    - Viết file `database/schema.sql` gồm 3 bảng:
-        + `players` (`id`, `username`, `total_score`, `created_at`).
-        + `matches` (`id`, `start_time`, `end_time`, `winner_id`).
-        + `match_players` (`match_id`, `player_id`, `score`, `kills`).
-    - Triển khai `DatabaseConnection` quản lý kết nối SQLite qua JDBC (`tankops.db`).
-    - Triển khai `MatchRepository.saveMatchResult()` với **ACID Transaction** (`setAutoCommit(false)`, `commit()`, `rollback()` khi lỗi - đạt **TC13, TC14**).
-    - Triển khai `PlayerRepository.getLeaderboard(int topN)` đọc bảng xếp hạng (đạt **TC15**).
+  - Viết file `database_test/schema.sql` gồm 3 bảng:
+    + `players` (`id`, `username`, `total_score`, `created_at`).
+    + `matches` (`id`, `start_time`, `end_time`, `winner_id`).
+    + `match_players` (`match_id`, `player_id`, `score`, `kills`).
+  - Triển khai `DatabaseConnection` quản lý kết nối SQLite qua JDBC (`tankops.db`).
+  - Triển khai `MatchRepository.saveMatchResult()` với **ACID Transaction** (`setAutoCommit(false)`, `commit()`, `rollback()` khi lỗi - đạt **TC13, TC14**).
+  - Triển khai `PlayerRepository.getLeaderboard(int topN)` đọc bảng xếp hạng (đạt **TC15**).
 * **Nhiệm vụ 2: Hệ thống Ghi & Phát lại Trận đấu (`Replay System`)**:
     - `ReplayRecorder`: Lắng nghe từng `SnapshotMessage` từ `GameRoom`, ghi tuần tự ra file nhị phân `.rec` bằng `DataOutputStream` (đóng gói Binary I/O).
     - `ReplayPlayer`: Đọc file `.rec`, phát lại từng snapshot theo đúng nhịp thời gian vào `GameStateStore` để `GameRenderer` hiển thị lại trận đấu (đạt **TC16**).
