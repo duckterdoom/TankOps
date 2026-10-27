@@ -18,6 +18,7 @@ import tankops.common.net.game.BulletSnapshot;
 import tankops.common.net.game.GameOverMessage;
 import tankops.common.net.game.SnapshotMessage;
 import tankops.common.net.game.TankSnapshot;
+import tankops.common.net.lobby.RoomStateMessage;
 import tankops.server.net.ClientSession;
 
 /**
@@ -36,6 +37,7 @@ public class GameRoom {
     private final String id;
     private final int maxPlayers;
     private final List<ClientSession> players = new ArrayList<>();
+    private final java.util.Set<String> readyPlayers = new java.util.HashSet<>();
 
     // ---- T21: vòng đời + điểm ----
     // volatile: thread tick đọc được ngay giá trị mới nhất. Việc GHI luôn nằm trong synchronized.
@@ -83,6 +85,7 @@ public class GameRoom {
 
     public synchronized void removePlayer(ClientSession player) {
         players.remove(player);
+        readyPlayers.remove(player.getPlayerName()); // Xóa trạng thái ready khi thoát
         if (player.getCurrentRoom() == this) {
             player.setCurrentRoom(null);
         }
@@ -118,6 +121,9 @@ public class GameRoom {
         if (players.size() < MIN_PLAYERS_TO_START) {
             throw new IllegalStateException("Cần ít nhất " + MIN_PLAYERS_TO_START + " người để bắt đầu");
         }
+        if (!areAllMembersReady()) {
+            throw new IllegalStateException("Tất cả người chơi khác phải READY trước khi bắt đầu!");
+        }
 
         engine = new GameEngine(map);
         // Engine báo "có người hạ xe" -> cộng điểm cho người bắn. (Hàm này chạy trên thread tick)
@@ -125,8 +131,9 @@ public class GameRoom {
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
-            ids.add(p.getPlayerId());
-            scores.put(p.getPlayerId(), 0); // ai cũng bắt đầu với 0 điểm
+            String name = p.getPlayerName();
+            ids.add(name);
+            scores.put(name, 0);
         }
         engine.spawnPlayers(ids, map.getPlayerSpawnPoints());
 
@@ -136,6 +143,8 @@ public class GameRoom {
 
         tickLoop = new TickLoop(tickRate);
         tickLoop.start(this::tick);
+        // Gửi 1 Snapshot ban đầu để các Client biết trận đấu đã khởi chạy
+        broadcast(buildBinarySnapshot());
     }
 
     /** Tắt vòng tick. Nếu đang PLAYING thì coi như ván đã FINISHED. */
@@ -329,5 +338,64 @@ public class GameRoom {
                 System.out.println("[GameRoom] Không gửi được message cho " + p.getPlayerId());
             }
         }
+    }
+
+    // 🟢 THÊM HÀM NÀY VÀO TRONG GAMEROOM.JAVA:
+    public synchronized void broadcastRoomState() {
+        List<String> playerNames = new ArrayList<>();
+
+        // Lấy danh sách playerId từ tất cả ClientSession trong phòng
+        for (ClientSession session : players) { // Hoặc danh sách lưu session người chơi của GameRoom
+            String name = session.getPlayerName();
+            // Lọc bỏ null hoặc chuỗi rỗng để tránh vỡ Codec
+            if (name != null && !name.isBlank()) {
+                playerNames.add(name);
+            } else {
+                playerNames.add(session.getPlayerId()); // Fallback về playerId nếu tên null
+            }
+        }
+
+        String hostId = playerNames.isEmpty() ? null : playerNames.get(0);
+
+        // Chuyển Set readyPlayers thành List để gửi đi
+        List<String> readyList = new ArrayList<>(readyPlayers);
+        for (String readyName : readyPlayers) {
+            if (readyName != null && !readyName.isBlank()) {
+                readyList.add(readyName);
+            }
+        }
+        // Broadcast bản tin RoomStateMessage (0x0E) tới mọi người chơi trong phòng
+        broadcast(new RoomStateMessage(getId(), playerNames, hostId, readyList));
+    }
+
+    public synchronized List<ClientSession> getPlayers() {
+        return new ArrayList<>(players);
+    }
+
+    public synchronized void setPlayerReady(String playerId, boolean ready) {
+        if (ready) {
+            readyPlayers.add(playerId);
+        } else {
+            readyPlayers.remove(playerId);
+        }
+    }
+
+    public synchronized boolean isPlayerReady(String playerId) {
+        return readyPlayers.contains(playerId);
+    }
+
+    // Kiểm tra xem tất cả Member (trừ Host - người đầu tiên) đã Ready chưa
+    public synchronized boolean areAllMembersReady() {
+        if (players.size() < MIN_PLAYERS_TO_START) {
+            return false;
+        }
+        // Host là người ở vị trí 0, kiểm tra từ vị trí 1 trở đi
+        for (int i = 1; i < players.size(); i++) {
+            ClientSession member = players.get(i);
+            if (!readyPlayers.contains(member.getPlayerName())) {
+                return false; // Có ít nhất 1 người chưa Ready
+            }
+        }
+        return true;
     }
 }

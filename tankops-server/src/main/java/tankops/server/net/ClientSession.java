@@ -42,6 +42,7 @@ public class ClientSession implements Runnable {
     private final Socket socket;
     private final GameServer gameServer;
     private final String playerId = "player-" + NEXT_ID.getAndIncrement();
+    private volatile String playerName;
 
     // Stream nhị phân theo MessageCodec
     private volatile DataOutputStream dataOut;
@@ -174,28 +175,75 @@ public class ClientSession implements Runnable {
             return;
         }
 
+        String requestName = (join.playerName() != null && !join.playerName().isBlank())
+                ? join.playerName().trim()
+                : null;
+        if (requestName == null) {
+            send(new JoinResponseMessage(false, "Tên người chơi không hợp lệ!", join.roomId(), playerId, -1));
+            return;
+        }
+        this.playerName = requestName;
+
         try {
             // Việc "tìm/tạo phòng + thêm người" làm trong RoomManager, trong một khối khóa,
             // để không bị phòng bị xóa chen vào giữa (tránh người chơi vào "phòng ma").
             GameRoom room = gameServer.getRoomManager().joinOrCreate(join.roomId(), this);
+            System.out.println("[DEBUG SERVER] Client " + playerId + " muốn vào phòng '" + room.getId() + "' với tên: '" + requestName + "'");
+            synchronized (room) {
+                for (ClientSession session : room.getPlayers()) {
+                    // Bỏ qua chính session hiện tại
+                    if (!session.getPlayerId().equals(this.getPlayerId())) {
+
+                        String existingName = session.getPlayerName();
+                        System.out.println("[DEBUG SERVER] Đang so sánh '" + requestName + "' với người chơi cũ: '" + existingName + "'");
+
+                        // So sánh không phân biệt hoa thường và xóa bỏ khoảng trắng thừa
+                        if (existingName != null && requestName.equalsIgnoreCase(existingName.trim())) {
+                            System.err.println("[DEBUG SERVER] PHÁT HIỆN TRÙNG TÊN: '" + requestName + "'!");
+
+                            // Kick khỏi phòng & reset tên
+                            room.removePlayer(this);
+                            this.playerName = null;
+
+                            send(new JoinResponseMessage(
+                                    false,
+                                    "Tên '" + requestName + "' đã tồn tại trong phòng! Vui lòng đổi tên.",
+                                    join.roomId(),
+                                    requestName,
+                                    -1
+                            ));
+                            return;
+                        }
+                    }
+                }
+            }
             int playerNumber = room.getPlayerCount();
-            send(new JoinResponseMessage(true, "Vào phòng thành công", room.getId(), playerId, playerNumber));
-            System.out.println("[ClientSession " + playerId + "] Đã vào phòng: " + room.getId());
+            send(new JoinResponseMessage(true, "Vào phòng thành công", room.getId(), getPlayerName(), playerNumber));
+            System.out.println("[ClientSession " + getPlayerName() + "] Đã vào phòng: " + room.getId());
+
+            // 2. BROADCAST CẬP NHẬT DANH SÁCH CHO CẢ PHÒNG
+            room.broadcastRoomState();
 
         } catch (RoomFullException e) {
-            send(new JoinResponseMessage(false, "Phòng đã đầy", join.roomId(), playerId, -1));
+            send(new JoinResponseMessage(false, "Phòng đã đầy", join.roomId(), getPlayerName(), -1));
         } catch (IllegalArgumentException | IllegalStateException e) {
             // Không có phòng / phòng đã bắt đầu / đang ở phòng khác / hết số phòng tối đa
-            send(new JoinResponseMessage(false, e.getMessage(), join.roomId(), playerId, -1));
+            send(new JoinResponseMessage(false, e.getMessage(), join.roomId(), getPlayerName(), -1));
         } catch (Exception e) {
-            send(new JoinResponseMessage(false, "Lỗi vào phòng: " + e.getMessage(), join.roomId(), playerId, -1));
+            send(new JoinResponseMessage(false, "Lỗi vào phòng: " + e.getMessage(), join.roomId(), getPlayerName(), -1));
         }
     }
 
     private void handleLeaveRoom(LeaveRoomMessage leave) {
         if (currentRoom != null && gameServer != null) {
+            GameRoom room = currentRoom;
             gameServer.getRoomManager().leaveRoom(currentRoom.getId(), this);
             currentRoom = null;
+
+            // BROADCAST LẠI DANH SÁCH CHO NHỮNG NGƯỜI CÒN LẠI TRONG PHÒNG
+            if (!room.isEmpty()) {
+                room.broadcastRoomState();
+            }
         }
     }
 
@@ -217,9 +265,9 @@ public class ClientSession implements Runnable {
         GameRoom room = currentRoom;
         if (room != null) {
             // Luôn dùng playerId của CHÍNH phiên này, không tin playerId client tự ghi trong tin nhắn
-            room.submitMove(playerId, input.direction());
+            room.submitMove(getPlayerName(), input.direction());
             if (input.shooting()) {
-                room.submitShoot(playerId);
+                room.submitShoot(getPlayerName());
             }
         }
     }
@@ -235,6 +283,20 @@ public class ClientSession implements Runnable {
             send(new ChatMessage("SERVER", "Bạn chưa ở trong phòng nào"));
             return;
         }
+
+        // Kiểm tra xem người yêu cầu có phải Host (P1) không
+        List<ClientSession> players = room.getPlayers();
+        if (players.isEmpty() || !players.get(0).getPlayerId().equals(this.getPlayerId())) {
+            send(new ChatMessage("SERVER", "Chỉ Host mới có quyền bắt đầu trận đấu!"));
+            return;
+        }
+
+        // Kiểm tra xem tất cả Member đã Ready chưa
+        if (!room.areAllMembersReady()) {
+            send(new ChatMessage("SERVER", "Chưa thể bắt đầu! Cần ít nhất 2 người và tất cả Member phải READY."));
+            return;
+        }
+
         try {
             gameServer.getRoomManager().startGame(
                     room.getId(), this, gameServer.loadMultiMap(), gameServer.getTickRate());
@@ -246,11 +308,30 @@ public class ClientSession implements Runnable {
     }
 
     private void handleChat(ChatMessage chat) {
+        GameRoom room = currentRoom;
+        if (room == null) return;
+
+        String content = chat.content().trim();
+
+        // 1. Xử lý lệnh Ready / Unready từ Client
+        if ("READY".equalsIgnoreCase(content)) {
+            room.setPlayerReady(getPlayerName(), true);
+            System.out.println("[Room] " + getPlayerName() + " -> READY");
+            room.broadcastRoomState(); // Broadcast để mọi người thấy icon/chữ Ready
+            return;
+        }
+        else if ("UNREADY".equalsIgnoreCase(content)) {
+            room.setPlayerReady(getPlayerName(), false);
+            System.out.println("[Room] " + getPlayerName() + " -> UNREADY");
+            room.broadcastRoomState();
+            return;
+        }
+
         if (START_COMMAND.equals(chat.content().trim())) {
             handleStartRequest();
             return;
         }
-        GameRoom room = currentRoom;
+
         if (room != null) {
             // Forward tin nhắn tới tất cả người chơi trong cùng phòng
             room.broadcast(new ChatMessage(playerId, chat.content()));
@@ -266,9 +347,13 @@ public class ClientSession implements Runnable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        if (currentRoom != null && gameServer != null && gameServer.getRoomManager() != null) {
+        GameRoom roomToUpdate = currentRoom;
+        if (roomToUpdate != null && gameServer != null && gameServer.getRoomManager() != null) {
             try {
-                gameServer.getRoomManager().leaveRoom(currentRoom.getId(), this);
+                gameServer.getRoomManager().leaveRoom(roomToUpdate.getId(), this);
+                if (!roomToUpdate.isEmpty()) {
+                    roomToUpdate.broadcastRoomState();
+                }
             } catch (Exception ignored) {}
             currentRoom = null;
         }
@@ -282,5 +367,12 @@ public class ClientSession implements Runnable {
         if (gameServer != null) {
             gameServer.removeSession(this);
         }
+    }
+
+    public String getPlayerName() {
+        if (playerName != null && !playerName.isBlank()) {
+            return playerName;
+        }
+        return playerId != null ? playerId : "Player_Unknown";
     }
 }

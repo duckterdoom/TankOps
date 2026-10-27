@@ -92,12 +92,12 @@ public class LobbyPanel extends JPanel {
             this.gameStateStore.addStateChangeListener(this::onStateChanged);
         }
 
-        // Tự động gửi bản tin xin danh sách phòng lên Server mỗi 2 giây
+        // Tự động gửi bản tin xin danh sách phòng lên Server mỗi giây
         startAutoRefresh();
     }
 
     private void startAutoRefresh() {
-        refreshTimer = new Timer(2000, e -> {
+        refreshTimer = new Timer(1000, e -> {
             if (isShowing()) {
                 sendRoomListRequest();
             }
@@ -183,22 +183,53 @@ public class LobbyPanel extends JPanel {
 
     private void onStateChanged() {
         SwingUtilities.invokeLater(() -> {
-            // 🟢 1. Cập nhật danh sách phòng thực tế từ Server
-            if (gameStateStore != null) {
-                List<RoomInfo> serverRooms = gameStateStore.getCurrentRoomList();
-                if (serverRooms != null && !serverRooms.isEmpty()) {
-                    this.roomListData.clear();
-                    this.roomListData.addAll(serverRooms);
-                    renderRoomCards(); // Vẽ lại các ô phòng trên UI
+            if (gameStateStore == null) return;
+
+
+            // 1. Cập nhật danh sách phòng thực tế từ Server lên UI
+            List<RoomInfo> serverRooms = gameStateStore.getCurrentRoomList();
+            if (serverRooms != null && !serverRooms.isEmpty()) {
+                this.roomListData.clear();
+                this.roomListData.addAll(serverRooms);
+                renderRoomCards(); // Vẽ lại giao diện danh sách phòng
+            }
+
+
+            // 2. Kiểm tra gói phản hồi JoinResponseMessage gần nhất từ Server
+            tankops.common.net.lobby.JoinResponseMessage joinInfo = gameStateStore.getJoinInfo();
+
+
+            if (joinInfo != null) {
+                if (joinInfo.success()) {
+                    //THÀNH CÔNG: Server cho phép vào phòng -> Chuyển sang màn hình RoomPanel
+                    if (isShowing()) { // Nếu đang ở màn hình LobbyPanel
+                        if (refreshTimer != null) refreshTimer.stop();
+
+
+                        RoomPanel roomPanel = mainFrame.getRoomPanel();
+                        if (roomPanel != null) {
+                            roomPanel.updateRoomInfo(joinInfo.roomId());
+                        }
+                        mainFrame.showScreen(ScreenState.ROOM);
+                    }
+                } else {
+                    // THẤT BẠI (Người thứ 6 / Phòng đầy): Hiện Thông Báo Lỗi và Giữ nguyên ở LobbyPanel
+                    if (isShowing()) {
+                        JOptionPane.showMessageDialog(
+                                this,
+                                joinInfo.message(), // Nội dung lỗi từ Server (VD: "Phòng đã đầy")
+                                "Vào phòng thất bại",
+                                JOptionPane.ERROR_MESSAGE
+                        );
+                        // Reset lại joinInfo trong store để không bị lặp lại Popup ở lần sau
+                        gameStateStore.onMessageReceived(new tankops.common.net.lobby.JoinResponseMessage(false, "", null, null, -1));
+                    }
                 }
             }
 
-            String activeRoomId = gameStateStore != null ? gameStateStore.getCurrentRoomId() : null;
-            if (activeRoomId != null) {
-                titleLabel.setText("CONNECTED TO: " + activeRoomId.toUpperCase());
-            }
 
-            if (gameStateStore != null && gameStateStore.isInGame() && !gameStateStore.isGameOver() && isShowing()) {
+            // 3. Nếu trận đấu đã bắt đầu (PLAYING) -> Chuyển sang GamePanel
+            if (gameStateStore.isInGame() && !gameStateStore.isGameOver() && isShowing()) {
                 if (refreshTimer != null) refreshTimer.stop();
                 gamePanel.startMultiPlayer(gameStateStore);
                 mainFrame.showScreen(ScreenState.GAME);
@@ -206,42 +237,34 @@ public class LobbyPanel extends JPanel {
         });
     }
 
+
     private void joinRoom(RoomInfo info) {
-        String playerId = gameStateStore != null ? gameStateStore.getAssignedPlayerId() : null;
-        if (playerId == null || playerId.isBlank()) {
-            playerId = "Player_" + (System.currentTimeMillis() % 1000);
-            if (gameStateStore != null) gameStateStore.setAssignedPlayerId(playerId);
+        // Kiểm tra nếu phòng đã đầy hoặc đang chơi trên UI thì chặn ngay từ Client
+        if ("IN_GAME".equalsIgnoreCase(info.state())) {
+            JOptionPane.showMessageDialog(this, "Phòng này đang trong trận đấu!", "Không thể vào", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (info.currentPlayers() >= info.maxPlayers()) {
+            JOptionPane.showMessageDialog(this, "Phòng đã đầy (tối đa " + info.maxPlayers() + " người)!", "Không thể vào", JOptionPane.WARNING_MESSAGE);
+            return;
         }
 
-        // 🟢 1. Gửi bản tin xin vào phòng lên Server (Chờ JoinResponseMessage trả về)
-        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(info.roomId(), playerId));
+        String playerName = getPlayerNameForLobby();
+        System.out.println("[DEBUG CLIENT] Gửi JoinRoomMessage với tên: '" + playerName + "'");
 
-        // 🟢 2. Chuyển sang màn hình phòng chờ
-        RoomPanel roomPanel = mainFrame.getRoomPanel();
-        if (roomPanel != null) {
-            roomPanel.updateRoomInfo(info.roomId());
-        }
-        mainFrame.showScreen(ScreenState.ROOM);
+        // CHỈ GỬI MESSAGE NẠP YÊU CẦU LÊN SERVER (KHÔNG CHUYỂN MÀN HÌNH TẠI ĐÂY)
+        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(info.roomId(), playerName));
     }
+
 
     private void createNewRoom() {
         int newNum = roomListData.size() + 1;
         String newId = "room_" + newNum;
 
-        String playerId = gameStateStore != null ? gameStateStore.getAssignedPlayerId() : null;
-        if (playerId == null || playerId.isBlank()) {
-            playerId = "Player_" + (System.currentTimeMillis() % 1000);
-            if (gameStateStore != null) gameStateStore.setAssignedPlayerId(playerId);
-        }
+        String playerName = getPlayerNameForLobby();
 
-        // 🟢 Gửi bản tin Join/Create phòng mới lên Server
-        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(newId, playerId));
-
-        RoomPanel roomPanel = mainFrame.getRoomPanel();
-        if (roomPanel != null) {
-            roomPanel.updateRoomInfo(newId);
-        }
-        mainFrame.showScreen(ScreenState.ROOM);
+        // Gửi bản tin Join/Create phòng mới lên Server
+        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(newId, playerName));
     }
 
     private void leaveRoom() {
@@ -256,5 +279,18 @@ public class LobbyPanel extends JPanel {
 
         gamePanel.stopGame();
         mainFrame.showScreen(ScreenState.MODE_SELECT);
+    }
+
+    private String getPlayerNameForLobby() {
+        String name = tankops.client.state.ClientConfig.getUsername();
+        if (name == null || name.isBlank()) {
+            if (gameStateStore != null) {
+                name = gameStateStore.getAssignedPlayerId();
+            }
+        }
+        if (name == null || name.isBlank()) {
+            name = "Player_" + (System.currentTimeMillis() % 1000);
+        }
+        return name;
     }
 }
