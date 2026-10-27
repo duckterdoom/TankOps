@@ -98,7 +98,12 @@ class ServerEndToEndTest {
             assertTrue(!c.readUntil(JoinResponseMessage.class).success());
             c.socket.close();
 
-            // 4) A gõ /start -> cả 2 nhận snapshot
+            // 4) B bấm READY (chờ server báo lại), rồi chủ phòng A gõ /start -> cả 2 nhận snapshot
+            b.send(new ChatMessage("B", "READY"));
+            tankops.common.net.lobby.RoomStateMessage st;
+            do {
+                st = b.readUntil(tankops.common.net.lobby.RoomStateMessage.class);
+            } while (!st.readyPlayerNames().contains("B"));
             a.send(new ChatMessage("a", "/start"));
             SnapshotMessage sa = a.readUntil(SnapshotMessage.class);
             SnapshotMessage sb = b.readUntil(SnapshotMessage.class);
@@ -114,6 +119,36 @@ class ServerEndToEndTest {
             if (b != null) b.socket.close();
             ss.close();
             server.getRoomManager().listRooms().forEach(GameRoom::stopGame);
+        }
+    }
+
+    // Trùng tên trong phòng bị từ chối, và người bị từ chối không còn "dính" trong phòng
+    @Test
+    void duplicateName_refused_andNotLeftInRoom() throws Exception {
+        GameServer server = new GameServer();
+        ServerSocket ss = new ServerSocket(0, 500);
+        new Thread(new ConnectionAcceptor(ss, server)).start();
+        FakeClient a = null;
+        FakeClient b = null;
+        try {
+            a = new FakeClient(ss.getLocalPort());
+            b = new FakeClient(ss.getLocalPort());
+
+            a.send(new JoinRoomMessage("room-1", "An"));
+            assertTrue(a.readUntil(JoinResponseMessage.class).success());
+
+            b.send(new JoinRoomMessage("room-1", "an")); // trùng tên (không phân biệt hoa thường)
+            assertTrue(!b.readUntil(JoinResponseMessage.class).success());
+            assertEquals(1, server.getRoomManager().getRoom("room-1").getPlayerCount());
+
+            // Đổi tên rồi vào lại được
+            b.send(new JoinRoomMessage("room-1", "Binh"));
+            assertTrue(b.readUntil(JoinResponseMessage.class).success());
+            assertEquals(2, server.getRoomManager().getRoom("room-1").getPlayerCount());
+        } finally {
+            if (a != null) a.socket.close();
+            if (b != null) b.socket.close();
+            ss.close();
         }
     }
 }

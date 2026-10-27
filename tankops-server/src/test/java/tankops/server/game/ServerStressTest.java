@@ -28,6 +28,15 @@ import tankops.server.net.GameServer;
  */
 class ServerStressTest {
 
+    // Từ khi có READY: mọi người trừ chủ phòng (người đầu tiên) phải READY thì mới START được
+    private static void ready(GameRoom room) {
+        java.util.List<tankops.server.net.ClientSession> ps = room.getPlayers();
+        for (int i = 1; i < ps.size(); i++) {
+            room.setPlayerReady(ps.get(i).getPlayerName(), true);
+        }
+    }
+
+
     private GameMap map() {
         return new MapLoader().loadMap("/maps/map_multi.map");
     }
@@ -164,7 +173,15 @@ class ServerStressTest {
             Thread starter = new Thread(() -> {
                 try {
                     go.await();
-                    room.startGame(map(), 30);
+                    // Người mới vào chen giữa chưa READY thì startGame từ chối: thử lại cho tới khi được
+                    for (int tries = 0; tries < 1000 && room.getState() != RoomState.PLAYING; tries++) {
+                        ready(room);
+                        try {
+                            room.startGame(map(), 30);
+                        } catch (IllegalStateException notReadyYet) {
+                            Thread.yield();
+                        }
+                    }
                 } catch (Throwable e) {
                     errors.add(e);
                 }
@@ -206,6 +223,7 @@ class ServerStressTest {
                 room.addPlayer(p);
                 players.add(p);
             }
+            ready(room);
             room.startGame(map(), 60);
             roomList.add(room);
             playersOfRoom.add(players);
@@ -280,6 +298,7 @@ class ServerStressTest {
             GameRoom room = new GameRoom("room-" + i, 5);
             room.addPlayer(fakePlayer());
             room.addPlayer(fakePlayer());
+            ready(room);
             room.startGame(map(), 30);
             room.stopGame();
         }

@@ -106,6 +106,7 @@ class RoomManagerLobbyTest {
         assertThrows(IllegalStateException.class, () -> m.startGame("room-1", p1, map(), 30));
 
         m.joinOrCreate("room-1", p2);
+        m.getRoom("room-1").setPlayerReady(p2.getPlayerName(), true); // chủ phòng là p1, p2 phải READY
         m.startGame("room-1", p2, map(), 30);
         try {
             assertEquals(RoomState.PLAYING, m.getRoom("room-1").getState());
@@ -124,6 +125,7 @@ class RoomManagerLobbyTest {
         ClientSession p2 = fakePlayer();
         m.joinOrCreate("room-1", p1);
         m.joinOrCreate("room-1", p2);
+        m.getRoom("room-1").setPlayerReady(p2.getPlayerName(), true);
         m.startGame("room-1", p1, map(), 30);
         m.leaveRoom("room-1", p1);
         m.leaveRoom("room-1", p2);
