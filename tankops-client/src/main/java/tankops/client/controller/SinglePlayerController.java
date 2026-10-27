@@ -1,5 +1,6 @@
 package tankops.client.controller;
 
+import tankops.client.sound.SoundManager;
 import tankops.common.engine.GameEngine;
 import tankops.common.engine.GameState;
 import tankops.common.map.GameMap;
@@ -20,6 +21,9 @@ public class SinglePlayerController {
 
             if (gameMap != null) {
                 engine = new GameEngine(gameMap);
+                engine.setOnSoundCallback(soundFile -> {
+                    SoundManager.getInstance().playSound(soundFile);
+                });
                 engine.spawnPlayers(List.of(localPlayerId), gameMap.getPlayerSpawnPoints());
                 engine.spawnBots(List.of(botPlayerId), gameMap.getEnemySpawnPoints());
             }
