@@ -15,6 +15,7 @@
         <module>tankops-server</module>
         <module>tankops-client</module>
         <module>tankops-tools</module>
+        <module>database</module>
     </modules>
 
     <dependencyManagement>
@@ -27,12 +28,12 @@
                 <scope>test</scope>
             </dependency>
 
-            <!-- SQLite JDBC -->
-            <dependency>
-                <groupId>org.xerial</groupId>
-                <artifactId>sqlite-jdbc</artifactId>
-                <version>3.45.1.0</version>
-            </dependency>
+             <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>4.11.1</version>
+        </dependency>
+
         </dependencies>
     </dependencyManagement>
 

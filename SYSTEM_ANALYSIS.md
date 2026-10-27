@@ -23,7 +23,7 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
 | **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop 30 tick/s, RoomManager, GameRoom). **Đã tích hợp MessageCodec vào ClientSession và GameRoom** (phát snapshot nhị phân 30 Hz, nhận Input, Ping/Pong, RoomList, Chat), 23/23 tests passed. Chưa có Database (JDBC) và Replay. |
 | **`tankops-client`** | **~80%** | Đã dựng đầy đủ bộ giao diện Swing (CardLayout với 5 Panel), Renderer đa lớp, SpriteManager, chế độ Singleplayer offline. **Đã hoàn thiện NetworkClient socket TCP (singleton, thread-safe, receiver thread), MessageListener, GameStateStore, InterpolationBuffer**, 10/10 tests passed. Chưa nối phòng động trên LobbyPanel. |
 | **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner. |
-| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database/` và `deploy/` chưa khởi tạo. |
+| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database_test/` và `deploy/` chưa khởi tạo. |
 
 ---
 
@@ -127,28 +127,33 @@ Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhi�
    - `InterpolationBufferTest`: Kiểm thử công thức LERP, độ mượt nội suy và giới hạn dung lượng hàng đợi snapshot.
 
 ---
-
+### 2.5. Module `database` (Mới cập nhật - Độc lập)
+- **Cấu trúc module riêng biệt**: Tách hoàn toàn khỏi `tankops-server`, khai báo thành một Maven Module độc lập (`database`) trong `pom.xml` gốc, có phân tách rõ ràng hai thư mục `src/main/java` và `src/test/java`.
+- **Cơ chế khởi tạo CSDL tự động**: Sử dụng kịch bản `schema.sql` kết hợp class quản lý kết nối (`Database.java` / `MongoDatabaseManager.java`) để tự động khởi tạo bảng/collection ngay khi khởi chạy chương trình hoặc chạy test.
+- **PlayerRepository & Transaction**: 
+  - Triển khai đầy đủ các thao tác CRUD cho người chơi sử dụng `PreparedStatement` đảm bảo an toàn bảo mật và chống SQL Injection.
+  - Xây dựng các bài kiểm thử tự động (`PlayerRepositoryTest`) đặt trong thư mục `test` để kiểm tra tính năng mà không ảnh hưởng đến mã nguồn chạy chính thức của các thành viên khác trong nhóm.
 ## 3. MA TRẬN ĐỐI CHIẾU TEST CASES (THEO MỤC 11 GOOGLE DOCS)
 
-| Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code | Trạng thái |
-| :---: | :--- | :--- | :--- | :---: |
-| **TC01** | Bullet hits tank | Đạn trúng xe: Xe mất máu, đạn biến mất | Đang chờ Game Engine (`handleShootEvent`, update đạn) | 🔴 Chưa đạt |
-| **TC02** | Tank hits wall | Xe đụng tường cản: Xe dừng lại, rollback vị trí | Đã có trong `GameEngineTest` (`testTC02_TankCollidesWithWallAndRollsBack`) | 🟢 Đạt |
-| **TC03** | Bullet destroys brick wall | Đạn phá tường gạch: Tường bị vỡ/biến mất | Đang chờ Game Engine xử lý va chạm đạn | 🔴 Chưa đạt |
-| **TC04** | Bullet hits steel wall | Đạn đụng tường thép: Tường giữ nguyên, đạn vỡ | Đang chờ Game Engine xử lý va chạm đạn | 🔴 Chưa đạt |
-| **TC05** | Tank death & respawn | Máu = 0: Tính mạng/kill, hồi sinh sau thời gian trễ | Chưa có test tự động trong GameEngine | 🔴 Chưa đạt |
-| **TC06** | Protocol round trip | Mã hóa rồi giải mã các loại Message: Giữ nguyên dữ liệu | **Đã hoàn thành 100% trong `MessageCodecTest` & các sub-suites (30 tests)** | 🟢 Đạt |
-| **TC07** | Malformed message | Gửi byte rác/bị lỗi: Server từ chối không crash | **Đã hoàn thành 100% trong `MessageCodecTest` (8 tests fuzzing/chống DoS)** | 🟢 Đạt |
-| **TC08** | Join room | Gửi JOIN_ROOM: Xuất hiện trong danh sách phòng | **Đã hoàn thành trong `NetworkClientTest` & `ClientSession` qua Socket thật** | 🟢 Đạt |
-| **TC09** | Room full | Người thứ 6 vào phòng 5 chỗ: Báo lỗi từ chối | Đã có trong `RoomManagerTest` (`tc09_roomFull_sixthPlayerRefused`) | 🟢 Đạt |
-| **TC10** | Concurrent join race | 50 người cùng tranh 1 chỗ: Duy nhất 1 người thành công | Đã có trong `RoomManagerTest` (`tc10_concurrentJoin_exactlyOneSucceeds`) | 🟢 Đạt |
+| Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code |          Trạng thái          |
+| :---: | :--- | :--- | :--- |:----------------------------:|
+| **TC01** | Bullet hits tank | Đạn trúng xe: Xe mất máu, đạn biến mất | Đang chờ Game Engine (`handleShootEvent`, update đạn) |         🔴 Chưa đạt          |
+| **TC02** | Tank hits wall | Xe đụng tường cản: Xe dừng lại, rollback vị trí | Đã có trong `GameEngineTest` (`testTC02_TankCollidesWithWallAndRollsBack`) |            🟢 Đạt            |
+| **TC03** | Bullet destroys brick wall | Đạn phá tường gạch: Tường bị vỡ/biến mất | Đang chờ Game Engine xử lý va chạm đạn |         🔴 Chưa đạt          |
+| **TC04** | Bullet hits steel wall | Đạn đụng tường thép: Tường giữ nguyên, đạn vỡ | Đang chờ Game Engine xử lý va chạm đạn |         🔴 Chưa đạt          |
+| **TC05** | Tank death & respawn | Máu = 0: Tính mạng/kill, hồi sinh sau thời gian trễ | Chưa có test tự động trong GameEngine |         🔴 Chưa đạt          |
+| **TC06** | Protocol round trip | Mã hóa rồi giải mã các loại Message: Giữ nguyên dữ liệu | **Đã hoàn thành 100% trong `MessageCodecTest` & các sub-suites (30 tests)** |            🟢 Đạt            |
+| **TC07** | Malformed message | Gửi byte rác/bị lỗi: Server từ chối không crash | **Đã hoàn thành 100% trong `MessageCodecTest` (8 tests fuzzing/chống DoS)** |            🟢 Đạt            |
+| **TC08** | Join room | Gửi JOIN_ROOM: Xuất hiện trong danh sách phòng | **Đã hoàn thành trong `NetworkClientTest` & `ClientSession` qua Socket thật** |            🟢 Đạt            |
+| **TC09** | Room full | Người thứ 6 vào phòng 5 chỗ: Báo lỗi từ chối | Đã có trong `RoomManagerTest` (`tc09_roomFull_sixthPlayerRefused`) |            🟢 Đạt            |
+| **TC10** | Concurrent join race | 50 người cùng tranh 1 chỗ: Duy nhất 1 người thành công | Đã có trong `RoomManagerTest` (`tc10_concurrentJoin_exactlyOneSucceeds`) |            🟢 Đạt            |
 | **TC11** | Disconnect mid-game | Giết tiến trình client: Trận đấu vẫn tiếp diễn, xóa xe client | Đã có dọn dẹp an toàn ở `ClientSession.cleanup` | 🟡 Cần viết integration test |
-| **TC12** | Client consistency | Nhiều client cùng chơi nhìn thấy một trạng thái thế giới | Chờ nối giao diện Multiplayer UI | 🔴 Chưa đạt |
-| **TC13** | Save match result | Trận đấu xong: Lưu các bản ghi match & players trong 1 transaction | Chờ Database module (`MatchRepository`) | 🔴 Chưa đạt |
-| **TC14** | Transaction rollback | Cố tình lỗi khi lưu kết quả: Không lưu dữ liệu rác | Chờ Database module (`MatchRepository`) | 🔴 Chưa đạt |
-| **TC15** | Leaderboard query | Đọc top N người chơi theo điểm | Chờ Database module (`PlayerRepository`) | 🔴 Chưa đạt |
-| **TC16** | Replay playback | Ghi trận đấu ra file nhị phân và đọc lại phát lại | Chờ Replay module (`ReplayRecorder`/`Player`) | 🔴 Chưa đạt |
-| **TC17** | GUI key input | Nhấn phím WASD/bắn: Xe phản hồi ngay, không giật lag | Đã test thực tế trên Singleplayer GUI | 🟢 Đạt |
+| **TC12** | Client consistency | Nhiều client cùng chơi nhìn thấy một trạng thái thế giới | Chờ nối giao diện Multiplayer UI |         🔴 Chưa đạt          |
+| **TC13** | Save match result | Trận đấu xong: Lưu các bản ghi match & players trong 1 transaction | Chờ Database module (`MatchRepository`) |            🟢 đạt            |
+| **TC14** | Transaction rollback | Cố tình lỗi khi lưu kết quả: Không lưu dữ liệu rác | Chờ Database module (`MatchRepository`) |         🔴 Chưa đạt          |
+| **TC15** | Leaderboard query | Đọc top N người chơi theo điểm | Chờ Database module (`PlayerRepository`) |         🔴 Chưa đạt          |
+| **TC16** | Replay playback | Ghi trận đấu ra file nhị phân và đọc lại phát lại | Chờ Replay module (`ReplayRecorder`/`Player`) |         🔴 Chưa đạt          |
+| **TC17** | GUI key input | Nhấn phím WASD/bắn: Xe phản hồi ngay, không giật lag | Đã test thực tế trên Singleplayer GUI |            🟢 Đạt            |
 
 ---
 
@@ -232,7 +237,7 @@ Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và
 **Trách nhiệm chính:** SQLite JDBC, Replay System, Benchmarking, CI/CD và Build Automation.
 
 * **Nhiệm vụ 1: Tích hợp Cơ sở dữ liệu SQLite (`tankops.server.persistence`)**:
-  - Viết file `database/schema.sql` gồm 3 bảng:
+  - Viết file `database_test/schema.sql` gồm 3 bảng:
     + `players` (`id`, `username`, `total_score`, `created_at`).
     + `matches` (`id`, `start_time`, `end_time`, `winner_id`).
     + `match_players` (`match_id`, `player_id`, `score`, `kills`).
