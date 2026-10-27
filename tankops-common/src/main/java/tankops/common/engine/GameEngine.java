@@ -4,6 +4,7 @@ import tankops.common.map.GameMap;
 import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
 import tankops.common.model.common.Vector2D;
+import tankops.common.model.environment.BrickWall;
 import tankops.common.model.environment.Environment;
 import tankops.common.model.environment.Ice;
 import tankops.common.model.powerups.*;
@@ -33,6 +34,7 @@ public class GameEngine {
 
     // Callback dùng để báo cho GameRoom biết khi có player hạ gục tank khác
     private Consumer<String> onKillCallback;
+    private Consumer<String> onSoundCallback;
     //Initialize GameEngine with populating environment data from GameMap into GameState
     public GameEngine(GameMap gameMap) {
         if(gameMap != null ){
@@ -56,6 +58,15 @@ public class GameEngine {
     // Đăng ký callback để gửi sự kiện Kill về cho GameRoom (không làm thay đổi logic GameRoom)
     public void setOnKillCallback(Consumer<String> onKillCallback) {
         this.onKillCallback = onKillCallback;
+    }
+
+    public void setOnSoundCallback(Consumer<String> onSoundCallback){
+        this.onSoundCallback = onSoundCallback;
+    }
+    public void notifySound(String sound){
+        if(onSoundCallback != null){
+            onSoundCallback.accept(sound);
+        }
     }
 
     //Spawn player tanks
@@ -126,6 +137,7 @@ public class GameEngine {
             // add powerup to gamestate
             if (powerUp != null) {
                 this.gameState.addPowerUp(powerUp);
+                notifySound("bonus_appeared.wav");
             }
         }
     }
@@ -171,6 +183,8 @@ public class GameEngine {
 
             // add bullet to game state
             this.gameState.addBullet(bullet);
+            notifySound("shoot.wav");
+
         }
     }
     //update game state per tick
@@ -185,65 +199,54 @@ public class GameEngine {
         cleanupDestroyedTanks();
     }
     private void updatePlayerTanks() {
-        for(Tank tank : this.gameState.getTanks()){
+        for (Tank tank : this.gameState.getTanks()) {
+            if (tank == null || tank.isDestroyed()) {
+                continue;
+            }
+
             tank.setMoving(false);
 
-            if (tank instanceof PlayerTank playerTank && !playerTank.isDestroyed()) {
+            // 1. Cập nhật khiên bảo vệ cho Player
+            if (tank instanceof PlayerTank playerTank) {
                 playerTank.updateShield();
             }
-        }
 
-        playerMoveDirections.forEach((playerId, direction) -> {
-            Tank tank = this.gameState.getTankById(playerId);
-            if (tank != null && !tank.isDestroyed()) {
-//                Vector2D oldPosition = tank.getPosition();
+            Direction inputDir = playerMoveDirections.get(tank.getId());
+
+            // 2. Xử lý di chuyển theo phím bấm (chỉ dành cho PlayerTank)
+            if (inputDir != null) {
                 Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
-                //when moving if detect collision then rollback pos
-                tank.move(direction); // update both dir and pos
+                tank.move(inputDir); // Cập nhật hướng và vị trí mới
 
-                if(!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)){
-                    tank.setPosition(oldPosition);
-                }else {
+                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                    tank.setPosition(oldPosition); // Va chạm -> Va tường rollback
+                } else {
                     tank.setMoving(true);
-
-                    // ĐANG GIỮ PHÍM VÀ Ở TRÊN BĂNG -> KÍCH HOẠT ĐÀ TRƯỢT
-                    double slideDist = getIceSlideDistance(tank);
-                    if (slideDist > 0) {
-                        tank.triggerSlide(slideDist);
-                    }
                 }
             }
 
-        });
-        // 2. XỬ LÝ QUÁN TÍNH TRƯỢT (Áp dụng cho cả khi đang giữ phím HOẶC KHI ĐÃ THẢ PHÍM)
-        for (Tank tank : this.gameState.getTanks()) {
-            if (tank != null && !tank.isDestroyed()) {
+            // 3. Xử lý logic trượt trên băng (Chung cho cả khi bấm phím hoặc thả phím)
+            double slideDist = getIceSlideDistance(tank);
 
-                // Bổ sung kiểm tra: Nếu người chơi ĐÃ THẢ PHÍM (không nằm trong playerMoveDirections)
-                // nhưng vẫn đang đứng trên băng, ta kích hoạt đà trượt theo hướng mặt hiện tại của tank (direction)
-                if (!playerMoveDirections.containsKey(tank.getId())) {
-                    double slideDist = getIceSlideDistance(tank);
-                    if (slideDist > 0 && !tank.isSliding()) {
-                        tank.triggerSlide(slideDist);
-                    }
-                }
+            // Nếu đang ở trên băng và chưa kích hoạt trượt -> Trigger trượt
+            if (slideDist > 0 && !tank.isSliding()) {
+                tank.triggerSlide(slideDist);
+            }
 
-                // Tiến hành thực hiện trượt nếu còn quãng đường trượt (slideDistanceRemaining > 0)
-                if (tank.isSliding()) {
-                    Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
-                    tank.slideForward(); // Thực hiện 1 bước trượt
+            // Thực hiện di chuyển đà trượt nếu còn quãng đường trượt
+            if (tank.isSliding()) {
+                Vector2D oldPosition = new Vector2D(tank.getPosition().x(), tank.getPosition().y());
+                tank.slideForward(); // Trượt thêm 1 bước
+                notifySound("sliding.wav");
 
-                    if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
-                        tank.setPosition(oldPosition); // Đụng tường -> Rollback & ngắt trượt
-                        tank.triggerSlide(0);
-                    } else {
-                        tank.setMoving(true);
-                    }
+                if (!tank.isWithinBounds(mapWidth, mapHeight) || checkWallCollision(tank)) {
+                    tank.setPosition(oldPosition); // Đụng tường -> Rollback & Hủy trượt
+                    tank.triggerSlide(0);
+                } else {
+                    tank.setMoving(true);
                 }
             }
         }
-
-
     }
     private double getIceSlideDistance(Tank tank) {
         for (Environment env : this.gameState.getEnvironments()) {
@@ -305,6 +308,11 @@ public class GameEngine {
             if (bullet.intersects(env)) {
                 env.takeHit(bullet.getStarLevel());
 
+                if (env instanceof BrickWall) {
+                    notifySound("bullet_hit_brick.wav"); // <--- Thêm ở đây
+                } else {
+                    notifySound("bullet_hit_stone.wav");
+                }
                 // Nếu tường bị phá hủy hoàn toàn -> Xóa khỏi GameState an toàn bằng Iterator
                 if (env.isDestroyed()) {
                     iterator.remove();
@@ -340,6 +348,7 @@ public class GameEngine {
                 boolean wasKilled = tank.isDestroyed() || (oldLives > newLives);
 
                 if (wasKilled) {
+                    notifySound("tank_exploded.wav");
                     String killerId = bullet.getOwnerId();
                     if (killerId != null && onKillCallback != null) {
                         onKillCallback.accept(killerId); // Báo về GameRoom để addKill
@@ -371,6 +380,7 @@ public class GameEngine {
 
                     // Nếu xe tăng là PlayerTank thì kích hoạt hiệu ứng của item
                     if (tank instanceof PlayerTank playerTank) {
+                        notifySound("bonus_obtained.wav");
                         powerUp.applyEffect(playerTank, this.gameState);
 
                         // Xóa power-up khỏi danh sách (vật phẩm biến mất sau khi bị ăn)
