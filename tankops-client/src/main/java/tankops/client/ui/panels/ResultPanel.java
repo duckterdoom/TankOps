@@ -144,11 +144,12 @@ public class ResultPanel extends JPanel {
             GameOverMessage gameOver = gameStateStore.getGameOverState();
             String localPlayerId = gameStateStore.getAssignedPlayerId();
 
-            if (gameOver != null && gameOver.scores() != null) {
+            if (gameOver != null && gameOver.scores() != null && !gameOver.scores().isEmpty()) {
                 Map<String, Integer> scores = gameOver.scores();
                 String winnerId = gameOver.winnerId();
 
-                if (localPlayerId != null && localPlayerId.equals(winnerId)) {
+                boolean isVictory = (winnerId != null && localPlayerId != null && winnerId.equalsIgnoreCase(localPlayerId));
+                if (isVictory) {
                     titleLabel.setText("VICTORY!");
                     titleLabel.setForeground(new Color(50, 205, 50));
                 } else {
@@ -156,28 +157,56 @@ public class ResultPanel extends JPanel {
                     titleLabel.setForeground(new Color(220, 50, 50));
                 }
 
-                int rank = 1;
+                java.util.List<Map.Entry<String, Integer>> sortedList = new java.util.ArrayList<>();
+                Map.Entry<String, Integer> winnerEntry = null;
+
                 for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+                    if (winnerId != null && entry.getKey().equalsIgnoreCase(winnerId)) {
+                        winnerEntry = entry;
+                    } else {
+                        sortedList.add(entry);
+                    }
+                }
+
+                // Sắp xếp danh sách người thua theo Score giảm dần
+                sortedList.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+
+                // Đưa Người thắng (Winner) lên vị trí đầu tiên (Index 0) nếu có
+                if (winnerEntry != null) {
+                    sortedList.add(0, winnerEntry);
+                }
+
+                //ĐƯA DỮ LIỆU ĐÃ SẮP XẾP LÊN BẢNG RESULT
+                int rank = 1;
+                for (Map.Entry<String, Integer> entry : sortedList) {
                     String pId = entry.getKey();
                     int score = entry.getValue();
 
-                    boolean isWinner = pId.equals(winnerId);
-                    String status = isWinner ? "MVP" : "DEFEATED";
-                    if (pId.equals(localPlayerId)) {
-                        pId += " (YOU)";
+                    boolean isWinner = (winnerId != null && winnerId.equalsIgnoreCase(pId));
+                    String status = isWinner ? "MVP / WINNER" : "DEFEATED";
+
+                    boolean isMe = (localPlayerId != null && localPlayerId.equalsIgnoreCase(pId));
+
+                    String displayName = pId;
+                    if (isMe) {
+                        displayName += " (YOU)";
                     }
+
+                    int estimatedKills = score / 100;
+                    String killsText = String.valueOf(estimatedKills);
+                    String deathsText = isWinner ? "0" : "1";
 
                     tableModel.addRow(new Object[]{
                             "#" + rank++,
-                            pId,
-                            "-",
-                            "-",
+                            displayName,
+                            killsText,
+                            deathsText,
                             score,
                             status
                     });
                 }
             } else {
-                tableModel.addRow(new Object[]{"#1", "Local Player", 0, 0, 0, "FINISHED"});
+                tableModel.addRow(new Object[]{"#1", "Waiting for server...", 0, 0, 0, "FINISHED"});
             }
         } else {
             titleLabel.setText("GAME OVER");

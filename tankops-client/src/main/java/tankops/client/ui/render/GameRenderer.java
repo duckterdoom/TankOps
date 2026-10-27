@@ -413,6 +413,17 @@ public class GameRenderer {
                 }
 
                 drawTank(g2d, tank.x(), tank.y(), tankSprite, fallbackColor, tank.health(), tank.maxHealth());
+                if (tank.shielded()) {
+                    int drawX = (int) tank.x();
+                    int drawY = (int) tank.y();
+
+                    g2d.setColor(new Color(0, 225, 255, 100));
+                    g2d.fillOval(drawX - 5, drawY - 5, TANK_SIZE + 10, TANK_SIZE + 10);
+
+                    g2d.setColor(Color.CYAN);
+                    g2d.setStroke(new BasicStroke(2.0f));
+                    g2d.drawOval(drawX - 5, drawY - 5, TANK_SIZE + 10, TANK_SIZE + 10);
+                }
             }
         }
 
@@ -444,14 +455,33 @@ public class GameRenderer {
 
         g2d.setTransform(oldTransform);
 
-        renderMultiHUDOverlay(g2d, panelWidth);
+        renderMultiHUDOverlay(g2d, tanks, localPlayerId, panelWidth);
     }
 
-    private void renderMultiHUDOverlay(Graphics2D g2d, int panelWidth) {
+    private void renderMultiHUDOverlay(Graphics2D g2d, List<TankSnapshot> tanks, String localPlayerId, int panelWidth) {
         g2d.setColor(Color.WHITE);
         g2d.setFont(new Font("Impact", Font.PLAIN, 18));
         g2d.drawString("MULTIPLAYER MODE", 25, 30);
         g2d.drawString("ONLINE", panelWidth - 120, 30);
+
+        if (tanks != null && localPlayerId != null) {
+            for (TankSnapshot tank : tanks) {
+                if (tank.id().equals(localPlayerId)) {
+                    int lives = tank.lives();
+                    int score = tank.score();
+
+                    // 1. Vẽ số mạng (LIVES)
+                    g2d.setColor(new Color(240, 190, 40));
+                    g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+                    g2d.drawString("LIVES: " + lives, 240, 30);
+
+                    // 2. Vẽ điểm số (SCORE) màu xanh lá nổi bật
+                    g2d.setColor(new Color(50, 205, 50));
+                    g2d.drawString("SCORE: " + score, 360, 30);
+                    break;
+                }
+            }
+        }
     }
 
     private boolean isTankShielded(PlayerTank player) {
