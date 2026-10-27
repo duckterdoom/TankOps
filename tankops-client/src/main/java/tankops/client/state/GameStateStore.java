@@ -11,6 +11,7 @@ import tankops.common.net.game.TankSnapshot;
 import tankops.common.net.game.BulletSnapshot;
 import tankops.common.net.lobby.RoomListResponseMessage;
 import tankops.common.net.lobby.RoomInfo;
+import tankops.common.net.lobby.RoomStateMessage;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,8 +30,16 @@ public class GameStateStore implements MessageListener {
     private volatile boolean inGame = false;
     private volatile List<RoomInfo> currentRoomList = Collections.emptyList();
 
+    // BỔ SUNG: Danh sách tên tất cả người chơi trong phòng từ Server Broadcast
+    private volatile List<String> roomPlayerNames = Collections.emptyList();
+    private volatile List<String> readyPlayerNames = Collections.emptyList();
+
     // [UPDATE]: Biến lưu ID người chơi từ LoginPanel
     private volatile String localPlayerId = null;
+
+    public JoinResponseMessage getJoinInfo() {
+        return joinInfo;
+    }
 
     @FunctionalInterface
     public interface StateChangeListener {
@@ -42,12 +51,22 @@ public class GameStateStore implements MessageListener {
     @Override
     public void onMessageReceived(Message message) {
         switch (message) {
+            // XỬ LÝ BROADCAST DANH SÁCH NGƯỜI CHƠI TRONG PHÒNG
+            case RoomStateMessage state -> {
+                this.roomPlayerNames = state.playerNames();
+                this.readyPlayerNames = state.readyPlayerNames(); // Lưu danh sách ready
+                notifyStateChanged();
+            }
             case RoomListResponseMessage roomList -> {
                 this.currentRoomList = roomList.rooms();
                 notifyStateChanged();
             }
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
+                // Khi bắt đầu nhận SnapshotMessage -> tự động đánh dấu đang trong trận
+                if (!inGame && !snap.gameOver()) {
+                    this.inGame = true;
+                }
                 notifyStateChanged();
             }
             case GameOverMessage over -> {
@@ -86,6 +105,7 @@ public class GameStateStore implements MessageListener {
         joinInfo      = null;
         gameOverState = null;
         inGame        = false;
+        roomPlayerNames = Collections.emptyList(); // Reset danh sách khi kết nối lại
         notifyStateChanged();
         System.out.println("[GameStateStore] Đã kết nối tới " + host + ":" + port);
     }
@@ -94,6 +114,7 @@ public class GameStateStore implements MessageListener {
     public void onDisconnected(String reason) {
         inGame        = false;
         gameOverState = null;
+        roomPlayerNames = Collections.emptyList(); // Reset danh sách khi mất kết nối
         notifyStateChanged();
         System.out.println("[GameStateStore] Mất kết nối: " + reason);
     }
@@ -172,19 +193,27 @@ public class GameStateStore implements MessageListener {
         return currentRoomList;
     }
 
-    // 🟢 Kiểm tra xem Client này có phải là Host (Player #1) hay không
+    // Lấy danh sách tên người chơi trong phòng từ Broadcast
+    public List<String> getRoomPlayerNames() {
+        return roomPlayerNames;
+    }
+
+    // Kiểm tra xem Client này có phải là Host (Player #1) hay không
     public boolean isHost() {
         JoinResponseMessage info = joinInfo;
         return info != null && info.playerNumber() == 1;
     }
 
-    // 🟢 Lấy số thứ tự người chơi
+    // Lấy số thứ tự người chơi
     public int getPlayerNumber() {
         JoinResponseMessage info = joinInfo;
         return info != null ? info.playerNumber() : 1;
     }
 
-// them tam de test
+    public List<String> getReadyPlayerNames() {
+        return readyPlayerNames;
+    }
+
     public void setInGame(boolean inGame) {
         this.inGame = inGame;
     }

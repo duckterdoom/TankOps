@@ -5,10 +5,12 @@ import tankops.client.state.GameStateStore;
 import tankops.client.ui.MainFrame;
 import tankops.client.ui.ScreenState;
 import tankops.common.net.lobby.LeaveRoomMessage;
+import tankops.common.net.system.ChatMessage;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.util.List;
 
 public class RoomPanel extends JPanel {
     private final MainFrame mainFrame;
@@ -99,26 +101,46 @@ public class RoomPanel extends JPanel {
 
         if (gameStateStore == null) return;
 
-        String localPlayerId = gameStateStore.getAssignedPlayerId();
         String currentRoomId = gameStateStore.getCurrentRoomId();
-
-        // 🟢 Đọc đúng vai trò dựa vào playerNumber từ JoinResponseMessage
-        this.isHost = gameStateStore.isHost();
-        int playerNum = gameStateStore.getPlayerNumber();
-
         if (currentRoomId != null) {
             roomTitleLabel.setText("ROOM: " + currentRoomId.toUpperCase());
         }
 
-        if (localPlayerId != null) {
+        this.isHost = gameStateStore.isHost();
+
+        // LẤY DANH SÁCH TẤT CẢ NGƯỜI CHƠI TRONG PHÒNG TỪ SERVER BROADCAST
+        List<String> playerNames = gameStateStore.getRoomPlayerNames();
+        List<String> readyNames = gameStateStore.getReadyPlayerNames();
+        String myName = gameStateStore.getAssignedPlayerId();
+
+        if (playerNames != null && !playerNames.isEmpty()) {
+            for (int i = 0; i < playerNames.size(); i++) {
+                String pName = playerNames.get(i);
+                boolean isRoomHost = (i == 0); // Vị trí đầu tiên là Host (P1)
+
+                String roleText = isRoomHost ? " (HOST)" : " (MEMBER)";
+                String selfBadge = pName.equals(myName) ? " [YOU]" : "";
+
+                // Trạng thái Ready (Chỉ hiển thị cho Member, Host luôn coi như sẵn sàng)
+                String readyText = "";
+                if (!isRoomHost) {
+                    // Kiểm tra xem tên player này có nằm trong danh sách readyNames từ Server không
+                    boolean playerIsReady = readyNames != null && readyNames.contains(pName);
+                    readyText = playerIsReady ? " - [READY]" : " - [NOT READY]";
+                }
+
+                playerListModel.addElement("P" + (i + 1) + ": " + pName + roleText + readyText + selfBadge);
+            }
+        } else if (myName != null) {
+            // Fallback hiển thị bản thân nếu chưa nhận Broadcast
+            int myNumber = gameStateStore.getPlayerNumber();
             String roleText = isHost ? " (HOST)" : " (MEMBER)";
-            String playerSlot = "P" + playerNum + ": ";
             String readyText = isReady ? " - READY" : " - NOT READY";
 
-            playerListModel.addElement((isHost ? "👑 " : "👤 ") + playerSlot + localPlayerId + roleText + readyText);
+            playerListModel.addElement("P" + myNumber + ": " + myName + roleText + readyText);
         }
 
-        // 🟢 Nút START GAME chỉ hiện cho Host (Player #1), Nút READY hiện cho Member
+        // Nút START GAME chỉ hiện cho Host, Nút READY hiện cho Member
         startBtn.setVisible(isHost);
         readyBtn.setVisible(!isHost);
 
@@ -135,14 +157,30 @@ public class RoomPanel extends JPanel {
             readyBtn.setText("READY");
             readyBtn.setBackground(new Color(46, 139, 87));
         }
-        // Gửi thông điệp Ready/Unready lên server ở đây
+        // GỬI TRẠNG THÁI READY LÊN SERVER (Nếu server có bản tin Ready/Chat)
+        String roomId = gameStateStore.getCurrentRoomId();
+        String playerId = gameStateStore.getAssignedPlayerId();
+        if (roomId != null && playerId != null) {
+            // Có thể dùng ChatMessage hoặc bản tin chuyên dụng để báo Ready
+            NetworkClient.getInstance().sendMessage(
+                    new ChatMessage(playerId, isReady ? "READY" : "UNREADY")
+            );
+        }
     }
 
     private void startGame() {
-        if (gameStateStore != null) {
-            gameStateStore.setInGame(true);
-            gamePanel.startMultiPlayer(gameStateStore);
-            mainFrame.showScreen(ScreenState.GAME);
+        if (gameStateStore != null && gameStateStore.isHost()) {
+            String roomId = gameStateStore.getCurrentRoomId();
+            String playerId = gameStateStore.getAssignedPlayerId();
+
+            // CHỈ HOST MỚI GỬI LỆNH BẮT ĐẦU GAME LÊN SERVER
+            // Server nhận lệnh này sẽ khởi tạo GameEngine và bắt đầu gửi SnapshotMessage
+            System.out.println("[RoomPanel] Host gửi lệnh bắt đầu trận đấu...");
+
+            // Nếu bạn có bản tin StartGameMessage hoặc ChatMessage:
+            NetworkClient.getInstance().sendMessage(
+                    new ChatMessage(playerId, "/start")
+            );
         }
     }
 
@@ -150,6 +188,7 @@ public class RoomPanel extends JPanel {
         String roomId = gameStateStore != null ? gameStateStore.getCurrentRoomId() : null;
         String playerId = gameStateStore != null ? gameStateStore.getAssignedPlayerId() : null;
 
+        isReady = false;
         if (roomId != null && playerId != null) {
             NetworkClient.getInstance().sendMessage(new LeaveRoomMessage(roomId, playerId));
         }

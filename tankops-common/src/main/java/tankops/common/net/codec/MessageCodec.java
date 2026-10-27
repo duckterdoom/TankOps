@@ -130,6 +130,25 @@ public final class MessageCodec {
     private static void writePayload(DataOutputStream out, Message msg)
             throws IOException, ProtocolException {
         switch (msg) {
+            case RoomStateMessage m -> {
+                out.writeUTF(m.roomId() != null ? m.roomId() : "");
+
+                // Ghi danh sách tên người chơi
+                List<String> names = m.playerNames() != null ? m.playerNames() : List.of();
+                out.writeInt(names.size());
+                for (String name : names) {
+                    out.writeUTF(name != null ? name : "Unknown");
+                }
+
+                out.writeUTF(m.hostId() != null ? m.hostId() : "");
+
+                // Ghi danh sách người chơi đã Ready
+                List<String> readyNames = m.readyPlayerNames() != null ? m.readyPlayerNames() : List.of();
+                out.writeInt(readyNames.size());
+                for (String readyName : readyNames) {
+                    out.writeUTF(readyName != null ? readyName : "Unknown");
+                }
+            }
             case JoinRoomMessage m -> {
                 out.writeUTF(m.roomId());
                 out.writeUTF(m.playerName());
@@ -224,6 +243,23 @@ public final class MessageCodec {
     private static Message readPayload(byte typeId, DataInputStream in)
             throws IOException, ProtocolException {
         return switch (typeId) {
+            case RoomStateMessage.TYPE_ID -> {
+                String rId = in.readUTF();
+                int nameCount = in.readInt();
+                List<String> names = new ArrayList<>(nameCount);
+                for (int i = 0; i < nameCount; i++) {
+                    names.add(in.readUTF());
+                }
+                String rawHost = in.readUTF();
+                String hostId = rawHost.isEmpty() ? null : rawHost;
+                // Đọc danh sách tên người chơi đã Ready
+                int readyCount = in.readInt();
+                List<String> readyNames = new ArrayList<>(readyCount);
+                for (int i = 0; i < readyCount; i++) {
+                    readyNames.add(in.readUTF());
+                }
+                yield new RoomStateMessage(rId, names, hostId, readyNames);
+            }
             case JoinRoomMessage.TYPE_ID ->
                 new JoinRoomMessage(in.readUTF(), in.readUTF());
 

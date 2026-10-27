@@ -8,6 +8,8 @@ import tankops.client.ui.MainFrame;
 import tankops.client.ui.ScreenState;
 import tankops.client.ui.render.GameRenderer;
 import tankops.common.engine.GameState;
+import tankops.common.map.GameMap;
+import tankops.common.map.MapLoader;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 
@@ -24,6 +26,8 @@ public class GamePanel extends JPanel {
     private Timer gameLoopTimer;
     private MultiplayerController multiController;
     private GameStateStore gameStateStore;
+
+    private GameState multiMapState;
 
     private boolean isMultiplayer = false;
 
@@ -74,6 +78,17 @@ public class GamePanel extends JPanel {
         stopGame();
         this.isMultiplayer = true;
         this.gameStateStore = gameStateStore;
+        this.gameStateStore.setInGame(true);
+        this.multiMapState = new GameState();
+        try {
+            MapLoader loader = new MapLoader();
+            GameMap multiMap = loader.loadMap("/maps/map_multi.map");
+            if (multiMap != null) {
+                this.multiMapState.setEnvironments(multiMap.getEnvironments());
+            }
+        } catch (Exception e) {
+            System.err.println("[GamePanel] Không thể tải bản đồ /maps/map_multi.map: " + e.getMessage());
+        }
 
         this.multiController = new MultiplayerController(inputHandler, gameStateStore);
         this.multiController.start();
@@ -86,6 +101,7 @@ public class GamePanel extends JPanel {
                 repaint();
             }
         });
+        requestFocusInWindow();
     }
 
     private void setupSinglePlayerLoop() {
@@ -163,7 +179,7 @@ public class GamePanel extends JPanel {
     }
 
     /**
-     * 🟢 Kiểm tra điều kiện kết thúc Single-Player:
+     * Kiểm tra điều kiện kết thúc Single-Player:
      * 1. Engine đánh dấu isGameOver() == true
      * 2. Player 1 bị tiêu diệt hoàn toàn
      * 3. Tiêu diệt hết sạch xe tăng địch (Bots)
@@ -191,14 +207,14 @@ public class GamePanel extends JPanel {
             }
         }
 
-        // 🔴 CHUYỂN RESULT NGAY KHI:
+        // CHUYỂN RESULT NGAY KHI:
         // - Player bị tiêu diệt hoàn toàn (!playerAlive)
         // - Hoặc đã dọn sạch toàn bộ Bot địch (!enemyAlive)
         return !playerAlive || !enemyAlive;
     }
 
     /**
-     * 🟢 Chuyển sang ResultPanel và dừng Game
+     * Chuyển sang ResultPanel và dừng Game
      */
     private void handleGameOver() {
         stopGame();
@@ -211,7 +227,7 @@ public class GamePanel extends JPanel {
                 GameState state = singleController != null ? singleController.getGameState() : null;
                 String playerId = singleController != null ? singleController.getLocalPlayerId() : "PLAYER_1";
 
-                // 🔴 Nếu xe bị nổ hết mạng ở lần chết cuối cùng (khiến PlayerTank bị xóa khỏi GameState)
+                //Nếu xe bị nổ hết mạng ở lần chết cuối cùng (khiến PlayerTank bị xóa khỏi GameState)
                 // ta cộng nấc chết cuối vào deathCount nếu trước đó xe vẫn còn sống
                 boolean playerIsAlive = state != null && state.getTanks() != null &&
                         state.getTanks().stream().anyMatch(t -> t instanceof PlayerTank && !t.isDestroyed());
@@ -221,7 +237,7 @@ public class GamePanel extends JPanel {
                     finalDeathCount++; // Cộng lần chết cuối khiến thua game
                 }
 
-                // 🟢 Truyền deathCount và lastKnownScore chuẩn sang ResultPanel
+                // Truyền deathCount và lastKnownScore chuẩn sang ResultPanel
                 resultPanel.updateSinglePlayerResults(state, playerId, lastKnownScore, killCount, finalDeathCount);
             }
         }
@@ -238,9 +254,34 @@ public class GamePanel extends JPanel {
             if (gameStateStore != null && gameStateStore.isInGame()) {
                 GameState mapState = singleController != null ? singleController.getGameState() : null;
 
+                if (multiMapState != null && gameStateStore.getBullets() != null) {
+                    for (var bSnap : gameStateStore.getBullets()) {
+                        multiMapState.getEnvironments().removeIf(env -> {
+                            // Tường cản đạn (như BrickWall)
+                            if (!env.canBulletPass()) {
+                                double bx = bSnap.x();
+                                double by = bSnap.y();
+                                double ex = env.getPosition().x();
+                                double ey = env.getPosition().y();
+                                double tileSize = tankops.common.model.environment.Environment.TILE_SIZE;
+
+                                // Kiểm tra tọa độ đạn trùng với ô tường
+                                boolean hit = bx >= ex && bx <= ex + tileSize &&
+                                        by >= ey && by <= ey + tileSize;
+
+                                if (hit) {
+                                    env.takeHit(1); // Giảm máu ô tường
+                                }
+                                return env.isDestroyed(); // Xóa khỏi danh sách vẽ khi máu = 0
+                            }
+                            return false;
+                        });
+                    }
+                }
+
                 renderer.renderSnapshots(
                         g2d,
-                        mapState,
+                        multiMapState,
                         gameStateStore.getTanks(),
                         gameStateStore.getBullets(),
                         gameStateStore.getAssignedPlayerId(),
