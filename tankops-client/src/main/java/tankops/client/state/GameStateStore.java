@@ -9,6 +9,8 @@ import tankops.common.net.game.EventMessage;
 import tankops.common.net.system.ChatMessage;
 import tankops.common.net.game.TankSnapshot;
 import tankops.common.net.game.BulletSnapshot;
+import tankops.common.net.lobby.RoomListResponseMessage;
+import tankops.common.net.lobby.RoomInfo;
 
 import java.util.Collections;
 import java.util.List;
@@ -25,6 +27,10 @@ public class GameStateStore implements MessageListener {
     private volatile JoinResponseMessage joinInfo = null;
     private volatile GameOverMessage gameOverState = null;
     private volatile boolean inGame = false;
+    private volatile List<RoomInfo> currentRoomList = Collections.emptyList();
+
+    // [UPDATE]: Biến lưu ID người chơi từ LoginPanel
+    private volatile String localPlayerId = null;
 
     @FunctionalInterface
     public interface StateChangeListener {
@@ -36,6 +42,10 @@ public class GameStateStore implements MessageListener {
     @Override
     public void onMessageReceived(Message message) {
         switch (message) {
+            case RoomListResponseMessage roomList -> {
+                this.currentRoomList = roomList.rooms();
+                notifyStateChanged();
+            }
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
                 notifyStateChanged();
@@ -48,9 +58,13 @@ public class GameStateStore implements MessageListener {
             case JoinResponseMessage join -> {
                 if (join.success()) {
                     joinInfo = join;
-                    inGame   = true;
+                    inGame   = false;
                     gameOverState = null;
                     latestSnapshot.set(null);
+                    // [UPDATE]: Cập nhật ID chính thức do Server cấp nếu có
+                    if (join.assignedPlayerId() != null) {
+                        this.localPlayerId = join.assignedPlayerId();
+                    }
                 }
                 notifyStateChanged();
             }
@@ -127,7 +141,13 @@ public class GameStateStore implements MessageListener {
 
     public String getAssignedPlayerId() {
         JoinResponseMessage info = joinInfo;
-        return info != null ? info.assignedPlayerId() : null;
+        return info != null && info.assignedPlayerId() != null ? info.assignedPlayerId() : localPlayerId;
+    }
+
+    // [UPDATE]: Setter cho phép LoginPanel hoặc Client chủ động gán tên người chơi
+    public void setAssignedPlayerId(String playerId) {
+        this.localPlayerId = playerId;
+        notifyStateChanged();
     }
 
     public void addStateChangeListener(StateChangeListener l) {
@@ -146,5 +166,26 @@ public class GameStateStore implements MessageListener {
                 System.err.println("[GameStateStore] StateChangeListener lỗi: " + e.getMessage());
             }
         }
+    }
+
+    public List<RoomInfo> getCurrentRoomList() {
+        return currentRoomList;
+    }
+
+    // 🟢 Kiểm tra xem Client này có phải là Host (Player #1) hay không
+    public boolean isHost() {
+        JoinResponseMessage info = joinInfo;
+        return info != null && info.playerNumber() == 1;
+    }
+
+    // 🟢 Lấy số thứ tự người chơi
+    public int getPlayerNumber() {
+        JoinResponseMessage info = joinInfo;
+        return info != null ? info.playerNumber() : 1;
+    }
+
+// them tam de test
+    public void setInGame(boolean inGame) {
+        this.inGame = inGame;
     }
 }

@@ -51,6 +51,10 @@ public class LoginPanel extends JPanel {
             ClientConfig.setUsername(username);
             ClientConfig.setServerAddress(serverAdd);
 
+            if (mainFrame.getGameStateStore() != null) {
+                mainFrame.getGameStateStore().setAssignedPlayerId(username);
+            }
+
             mainFrame.showScreen(ScreenState.MODE_SELECT);
         });
 
