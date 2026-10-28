@@ -198,7 +198,10 @@ public final class MessageCodec {
                     out.writeBoolean(t.shielded());
                     out.writeBoolean(t.moving());
                     out.writeBoolean(t.destroyed());
+                    out.writeInt(t.lives());
+                    out.writeInt(t.score());
                 }
+
                 out.writeInt(m.bullets().size());
                 for (BulletSnapshot b : m.bullets()) {
                     out.writeUTF(b.id());
@@ -326,11 +329,12 @@ public final class MessageCodec {
                 List<TankSnapshot> tanks = new ArrayList<>(tankCount);
                 for (int i = 0; i < tankCount; i++) {
                     tanks.add(new TankSnapshot(
-                        in.readUTF(),
-                        in.readDouble(), in.readDouble(),
-                        readDirection(in),
-                        in.readInt(), in.readInt(), in.readInt(),
-                        in.readBoolean(), in.readBoolean(), in.readBoolean()
+                            in.readUTF(),
+                            in.readDouble(), in.readDouble(),
+                            readDirection(in),
+                            in.readInt(), in.readInt(), in.readInt(),
+                            in.readBoolean(), in.readBoolean(), in.readBoolean(),
+                            in.readInt(), in.readInt()
                     ));
                 }
 

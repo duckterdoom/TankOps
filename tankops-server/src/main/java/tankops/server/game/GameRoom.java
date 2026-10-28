@@ -364,6 +364,8 @@ public class GameRoom {
                 starLevel = pt.getStarLevel();
                 shielded = pt.isShielded();
             }
+            int lives = (t instanceof PlayerTank p) ? p.getLives() : 1;
+            int score = (t instanceof PlayerTank p) ? p.getScore() : 0;
             tankSnapshots.add(new TankSnapshot(
                     t.getId(),
                     t.getPosition().x(),
@@ -374,8 +376,11 @@ public class GameRoom {
                     starLevel,
                     shielded,
                     t.isMoving(),
-                    t.isDestroyed()
+                    t.isDestroyed(),
+                    lives,
+                    score
             ));
+
         }
 
         List<BulletSnapshot> bulletSnapshots = new ArrayList<>();
