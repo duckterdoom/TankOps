@@ -17,3 +17,8 @@ target/
 *.db
 *.log
 downloads/
+
+# Windows application with bundled Java runtime
+dist/
+/TankOps.exe
+/TankOps-Ubuntu.zip

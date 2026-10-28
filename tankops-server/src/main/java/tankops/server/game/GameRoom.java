@@ -54,6 +54,7 @@ public class GameRoom {
 
     // ---- T15: tick ----
     private final ConcurrentLinkedQueue<InputCommand> inputQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<String> departedPlayers = new ConcurrentLinkedQueue<>();
     private GameEngine engine;          // chỉ thread tick được đụng vào
     private TickLoop tickLoop;
     private volatile int tickCount = 0;
@@ -97,6 +98,7 @@ public class GameRoom {
         }
 
         if (state == RoomState.PLAYING) {
+            departedPlayers.add(player.getPlayerName());
             if (players.isEmpty()) {
                 stopGame();              // không còn ai: tắt vòng tick, khỏi chạy vô ích
             } else if (players.size() < MIN_PLAYERS_TO_START) {
@@ -220,6 +222,11 @@ public class GameRoom {
         }
 
         InputCommand cmd;
+        String departed;
+        while ((departed = departedPlayers.poll()) != null) {
+            String playerName = departed;
+            engine.getGameState().getTanks().removeIf(tank -> tank.getId().equals(playerName));
+        }
         while ((cmd = inputQueue.poll()) != null) {
             if (cmd.shoot()) {
                 engine.handleShootEvent(cmd.playerId());

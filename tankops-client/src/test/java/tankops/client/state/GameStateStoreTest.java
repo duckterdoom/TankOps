@@ -31,7 +31,7 @@ class GameStateStoreTest {
     }
 
     @Test
-    @DisplayName("Nhận JoinResponseMessage thành công -> chuyển sang isInGame = true")
+    @DisplayName("Vào phòng chờ chưa bắt đầu trận cho tới khi có snapshot")
     void onJoinResponseSuccess_setsInGame() {
         GameStateStore store = new GameStateStore();
         AtomicBoolean changed = new AtomicBoolean(false);
@@ -39,7 +39,7 @@ class GameStateStoreTest {
 
         store.onMessageReceived(new JoinResponseMessage(true, "OK", "room-1", "player-1", 1));
 
-        assertTrue(store.isInGame());
+        assertFalse(store.isInGame());
         assertEquals("room-1", store.getCurrentRoomId());
         assertEquals("player-1", store.getAssignedPlayerId());
         assertTrue(changed.get());
@@ -69,7 +69,7 @@ class GameStateStoreTest {
     void onGameOverMessage_setsGameOver() {
         GameStateStore store = new GameStateStore();
         store.onMessageReceived(new JoinResponseMessage(true, "OK", "room-1", "player-1", 1));
-        assertTrue(store.isInGame());
+        assertFalse(store.isInGame());
 
         store.onMessageReceived(new GameOverMessage("player-1", Map.of("player-1", 200, "player-2", 0)));
 
@@ -77,5 +77,28 @@ class GameStateStoreTest {
         assertTrue(store.isGameOver());
         assertEquals("player-1", store.getGameOverState().winnerId());
         assertEquals(200, store.getScores().get("player-1"));
+    }
+    @Test
+    void roomFullErrorIsReportedOnceWithoutJoining() {
+        GameStateStore store = new GameStateStore();
+        store.onMessageReceived(new JoinResponseMessage(false, "Room full", "room-1", "P6", -1));
+        assertEquals("Room full", store.consumeJoinError());
+        assertNull(store.consumeJoinError());
+        assertNull(store.getCurrentRoomId());
+        assertFalse(store.isInGame());
+    }
+
+    @Test
+    void leavingOrDisconnectingClearsRoomSoNextGameCanJoin() {
+        GameStateStore store = new GameStateStore();
+        store.onMessageReceived(new JoinResponseMessage(true, "OK", "room-1", "P1", 1));
+        store.clearRoom();
+        assertNull(store.getCurrentRoomId());
+        store.onMessageReceived(new JoinResponseMessage(true, "OK", "room-2", "P1", 1));
+        assertEquals("room-2", store.getCurrentRoomId());
+        store.onDisconnected("test");
+        assertNull(store.getCurrentRoomId());
+        assertNull(store.getLatestSnapshot());
+        assertFalse(store.isInGame());
     }
 }

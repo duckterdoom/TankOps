@@ -3,6 +3,9 @@ package tankops.server.net;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
+import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -20,6 +23,7 @@ public class GameServer {
     private RoomManager roomManager;
     private int tickRate;
     private String multiMapPath;
+    private String bindAddress;
 
 
     // Danh sách client đang kết nối.
@@ -37,6 +41,14 @@ public class GameServer {
         props.load(in);
         in.close();
 
+        String configPath = System.getProperty("tankops.config");
+        if (configPath != null) {
+            try (InputStream external = Files.newInputStream(Path.of(configPath))) {
+                props.load(external);
+            }
+        }
+        bindAddress = System.getProperty("tankops.bindAddress", props.getProperty("server.bindAddress", "0.0.0.0"));
+
         port = Integer.parseInt(props.getProperty("server.port", "5555"));
         maxClients = Integer.parseInt(props.getProperty("server.maxClients", "100"));
 
@@ -52,8 +64,8 @@ public class GameServer {
 
     // Mở cổng và bật thread chuyên nhận kết nối mới
     public void start() throws IOException {
-        ServerSocket serverSocket = new ServerSocket(port);
-        System.out.println("[GameServer] Đang lắng nghe ở cổng " + port);
+        ServerSocket serverSocket = new ServerSocket(port, 50, InetAddress.getByName(bindAddress));
+        System.out.println("[GameServer] Đang lắng nghe tại " + bindAddress + ":" + serverSocket.getLocalPort());
 
         ConnectionAcceptor acceptor = new ConnectionAcceptor(serverSocket, this);
         new Thread(acceptor).start();

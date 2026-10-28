@@ -26,7 +26,6 @@ public class LobbyPanel extends JPanel {
     private final JButton leaveBtn;
 
     private Timer refreshTimer;
-    private static final int MAX_PLAYERS_PER_ROOM = 5;
     private final List<RoomInfo> roomListData = new ArrayList<>();
 
     public LobbyPanel(MainFrame mainFrame, GameStateStore gameStateStore, GamePanel gamePanel) {
@@ -57,7 +56,7 @@ public class LobbyPanel extends JPanel {
         scrollPane.getViewport().setOpaque(false);
         scrollPane.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 80)),
-                "AVAILABLE ROOMS (MAX 10)", 0, 0,
+                "AVAILABLE ROOMS", 0, 0,
                 new Font("Arial", Font.BOLD, 12), Color.GRAY
         ));
         add(scrollPane, BorderLayout.CENTER);
@@ -85,7 +84,6 @@ public class LobbyPanel extends JPanel {
         btnPanel.add(leaveBtn);
         add(btnPanel, BorderLayout.SOUTH);
 
-        initDefaultRooms();
         renderRoomCards();
 
         if (this.gameStateStore != null) {
@@ -112,13 +110,6 @@ public class LobbyPanel extends JPanel {
         }
         // Gửi tin nhắn kèm theo playerId chính xác
         NetworkClient.getInstance().sendMessage(new RoomListRequestMessage(playerId));
-    }
-
-    private void initDefaultRooms() {
-        roomListData.clear();
-        for (int i = 1; i <= 3; i++) {
-            roomListData.add(new RoomInfo("room_" + i, 0, MAX_PLAYERS_PER_ROOM, "WAITING"));
-        }
     }
 
     private void renderRoomCards() {
@@ -188,7 +179,7 @@ public class LobbyPanel extends JPanel {
 
             // 1. Cập nhật danh sách phòng thực tế từ Server lên UI
             List<RoomInfo> serverRooms = gameStateStore.getCurrentRoomList();
-            if (serverRooms != null && !serverRooms.isEmpty()) {
+            if (serverRooms != null) {
                 this.roomListData.clear();
                 this.roomListData.addAll(serverRooms);
                 renderRoomCards(); // Vẽ lại giao diện danh sách phòng
@@ -203,7 +194,6 @@ public class LobbyPanel extends JPanel {
                 if (joinInfo.success()) {
                     //THÀNH CÔNG: Server cho phép vào phòng -> Chuyển sang màn hình RoomPanel
                     if (isShowing()) { // Nếu đang ở màn hình LobbyPanel
-                        if (refreshTimer != null) refreshTimer.stop();
 
 
                         RoomPanel roomPanel = mainFrame.getRoomPanel();
@@ -212,25 +202,17 @@ public class LobbyPanel extends JPanel {
                         }
                         mainFrame.showScreen(ScreenState.ROOM);
                     }
-                } else {
-                    // THẤT BẠI (Người thứ 6 / Phòng đầy): Hiện Thông Báo Lỗi và Giữ nguyên ở LobbyPanel
-                    if (isShowing()) {
-                        JOptionPane.showMessageDialog(
-                                this,
-                                joinInfo.message(), // Nội dung lỗi từ Server (VD: "Phòng đã đầy")
-                                "Vào phòng thất bại",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-                        // Reset lại joinInfo trong store để không bị lặp lại Popup ở lần sau
-                        gameStateStore.onMessageReceived(new tankops.common.net.lobby.JoinResponseMessage(false, "", null, null, -1));
-                    }
                 }
+            }
+
+            String joinError = gameStateStore.consumeJoinError();
+            if (joinError != null && !joinError.isBlank() && isShowing()) {
+                JOptionPane.showMessageDialog(this, joinError, "Vào phòng thất bại", JOptionPane.ERROR_MESSAGE);
             }
 
 
             // 3. Nếu trận đấu đã bắt đầu (PLAYING) -> Chuyển sang GamePanel
             if (gameStateStore.isInGame() && !gameStateStore.isGameOver() && isShowing()) {
-                if (refreshTimer != null) refreshTimer.stop();
                 gamePanel.startMultiPlayer(gameStateStore);
                 mainFrame.showScreen(ScreenState.GAME);
             }
@@ -240,7 +222,7 @@ public class LobbyPanel extends JPanel {
 
     private void joinRoom(RoomInfo info) {
         // Kiểm tra nếu phòng đã đầy hoặc đang chơi trên UI thì chặn ngay từ Client
-        if ("IN_GAME".equalsIgnoreCase(info.state())) {
+        if (!"LOBBY".equalsIgnoreCase(info.state())) {
             JOptionPane.showMessageDialog(this, "Phòng này đang trong trận đấu!", "Không thể vào", JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -258,17 +240,13 @@ public class LobbyPanel extends JPanel {
 
 
     private void createNewRoom() {
-        int newNum = roomListData.size() + 1;
-        String newId = "room_" + newNum;
-
         String playerName = getPlayerNameForLobby();
 
         // Gửi bản tin Join/Create phòng mới lên Server
-        NetworkClient.getInstance().sendMessage(new JoinRoomMessage(newId, playerName));
+        NetworkClient.getInstance().sendMessage(new JoinRoomMessage("new", playerName));
     }
 
     private void leaveRoom() {
-        if (refreshTimer != null) refreshTimer.stop();
 
         String roomId = gameStateStore.getCurrentRoomId();
         String playerId = gameStateStore.getAssignedPlayerId();
@@ -278,6 +256,7 @@ public class LobbyPanel extends JPanel {
         }
 
         gamePanel.stopGame();
+        gameStateStore.clearRoom();
         mainFrame.showScreen(ScreenState.MODE_SELECT);
     }
 

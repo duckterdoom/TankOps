@@ -1,1 +1,28 @@
-    # TankOps
+# TankOps
+
+Nhấp đúp **`TankOps.exe`** ngay ở thư mục gốc để mở game, không cần vào IDE.
+
+Chỉ cần **một file `TankOps.exe`** để chơi hoặc gửi sang máy Windows x64 khác.
+File này đã chứa Java, bản đồ, hình ảnh và âm thanh; người chơi không cần cài Java
+hoặc Maven. Lần mở đầu tiên, game tự giải nén vào `%LOCALAPPDATA%\TankOps\versions`
+(có thể mất vài giây); các lần sau dùng lại dữ liệu đã giải nén.
+Mỗi bản build có bộ nhớ đệm riêng theo mã SHA-256 của nội dung game.
+
+Chọn **ENTER GAME → Singleplayer** để chơi offline. Multiplayer cần server chạy riêng.
+
+Để chơi qua các mạng khác nhau bằng Ubuntu VM + Tailscale, dùng gói server
+`TankOps-Ubuntu.zip` và làm theo [hướng dẫn Tailscale](docs/TAILSCALE_SETUP.md).
+Mỗi phòng tối đa **5 người**. Client nhớ tên và địa chỉ server trên máy người chơi;
+chỉ cần nhập IP Tailscale hoặc tên DNS của Ubuntu, cổng mặc định là 5555.
+
+Khi sửa hoặc kéo code mới, đóng game và chạy lại lệnh sau trong PowerShell tại thư mục dự án để cập nhật bản exe:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-TankOps.ps1
+```
+
+Để build cần JDK 21 trở lên và .NET Framework có sẵn trên Windows.
+Script tự tìm JDK qua `JAVA_HOME`, `PATH`, thư mục `.jdks` và các thư mục cài đặt phổ biến.
+Có thể chỉ định thủ công bằng `-JdkHome "C:\duong-dan\jdk-21"`.
+Script chỉ đóng gói mã production của `tankops-common` và `tankops-client`,
+kèm bản đồ, sprite và âm thanh; không cần Maven hoặc module database.

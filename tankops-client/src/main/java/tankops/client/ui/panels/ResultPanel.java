@@ -192,8 +192,8 @@ public class ResultPanel extends JPanel {
         if (isMultiplayer) {
             JButton lobbyBtn = createStyleButton("BACK TO LOBBY", new Color(70, 130, 180));
             JButton menuBtn = createStyleButton("MAIN MENU", new Color(178, 34, 34));
-            lobbyBtn.addActionListener(e -> mainFrame.showScreen(ScreenState.LOBBY));
-            menuBtn.addActionListener(e -> mainFrame.showScreen(ScreenState.MODE_SELECT));
+            lobbyBtn.addActionListener(e -> leaveMatch(ScreenState.LOBBY));
+            menuBtn.addActionListener(e -> leaveMatch(ScreenState.MODE_SELECT));
 
             actionPanel.add(lobbyBtn);
             actionPanel.add(menuBtn);
@@ -231,6 +231,16 @@ public class ResultPanel extends JPanel {
         for (int i = 0; i < table.getColumnCount(); i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
         }
+    }
+
+    private void leaveMatch(ScreenState destination) {
+        GameStateStore store = mainFrame.getGameStateStore();
+        if (store.getCurrentRoomId() != null) {
+            tankops.client.net.NetworkClient.getInstance().sendMessage(
+                    new tankops.common.net.lobby.LeaveRoomMessage(store.getCurrentRoomId(), store.getAssignedPlayerId()));
+        }
+        store.clearRoom();
+        mainFrame.showScreen(destination);
     }
 
     private JButton createStyleButton(String text, Color bgColor) {

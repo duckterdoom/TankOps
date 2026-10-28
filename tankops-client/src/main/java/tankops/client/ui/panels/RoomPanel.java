@@ -90,6 +90,9 @@ public class RoomPanel extends JPanel {
     }
 
     public void updateRoomInfo(String roomId) {
+        isReady = false;
+        readyBtn.setText("READY");
+        readyBtn.setBackground(new Color(46, 139, 87));
         if (roomId != null) {
             roomTitleLabel.setText("ROOM: " + roomId.toUpperCase());
         }
@@ -192,7 +195,7 @@ public class RoomPanel extends JPanel {
         if (roomId != null && playerId != null) {
             NetworkClient.getInstance().sendMessage(new LeaveRoomMessage(roomId, playerId));
         }
-
+        gameStateStore.clearRoom();
         mainFrame.showScreen(ScreenState.LOBBY);
     }
 

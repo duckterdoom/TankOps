@@ -28,6 +28,7 @@ public class GameStateStore implements MessageListener {
 
     private final AtomicReference<SnapshotMessage> latestSnapshot = new AtomicReference<>(null);
     private volatile JoinResponseMessage joinInfo = null;
+    private final AtomicReference<String> joinError = new AtomicReference<>();
     private volatile GameOverMessage gameOverState = null;
     private volatile boolean inGame = false;
     private volatile List<RoomInfo> currentRoomList = Collections.emptyList();
@@ -86,6 +87,8 @@ public class GameStateStore implements MessageListener {
                     if (join.assignedPlayerId() != null) {
                         this.localPlayerId = join.assignedPlayerId();
                     }
+                } else {
+                    joinError.set(join.message());
                 }
                 notifyStateChanged();
             }
@@ -108,21 +111,36 @@ public class GameStateStore implements MessageListener {
         gameOverState = null;
         inGame        = false;
         roomPlayerNames = Collections.emptyList(); // Reset danh sách khi kết nối lại
+        readyPlayerNames = Collections.emptyList();
+        joinError.set(null);
         notifyStateChanged();
         System.out.println("[GameStateStore] Đã kết nối tới " + host + ":" + port);
     }
 
     @Override
     public void onDisconnected(String reason) {
-        inGame        = false;
-        gameOverState = null;
-        roomPlayerNames = Collections.emptyList(); // Reset danh sách khi mất kết nối
-        notifyStateChanged();
+        currentRoomList = Collections.emptyList();
+        clearRoom();
         System.out.println("[GameStateStore] Mất kết nối: " + reason);
     }
 
     public SnapshotMessage getLatestSnapshot() {
         return latestSnapshot.get();
+    }
+
+    public String consumeJoinError() {
+        return joinError.getAndSet(null);
+    }
+
+    public void clearRoom() {
+        joinInfo = null;
+        joinError.set(null);
+        inGame = false;
+        gameOverState = null;
+        latestSnapshot.set(null);
+        roomPlayerNames = Collections.emptyList();
+        readyPlayerNames = Collections.emptyList();
+        notifyStateChanged();
     }
 
     public List<TankSnapshot> getTanks() {

@@ -10,6 +10,9 @@ import java.io.DataOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import tankops.server.game.GameRoom;
 
@@ -29,6 +32,51 @@ import tankops.common.net.system.ChatMessage;
 
 // Test "đầu-cuối": server thật + client giả nói chuyện bằng đúng giao thức nhị phân của M1
 class ServerEndToEndTest {
+
+    @Test
+    void fivePlayersStart_sixthRefused_disconnectRemovesOnlyDepartedTank() throws Exception {
+        GameServer server = new GameServer();
+        List<FakeClient> clients = new ArrayList<>();
+        try (ServerSocket listener = new ServerSocket(0)) {
+            Thread acceptor = new Thread(new ConnectionAcceptor(listener, server));
+            acceptor.start();
+            try {
+                for (int i = 1; i <= 6; i++) {
+                    FakeClient client = new FakeClient(listener.getLocalPort());
+                    clients.add(client);
+                    client.send(new JoinRoomMessage("room-1", "Tail" + i));
+                    assertEquals(i <= 5, client.readUntil(JoinResponseMessage.class).success());
+                }
+                assertEquals(5, server.getRoomManager().getRoom("room-1").getPlayerCount());
+                for (int i = 1; i < 5; i++) {
+                    FakeClient member = clients.get(i);
+                    member.send(new ChatMessage("Tail" + (i + 1), "READY"));
+                    tankops.common.net.lobby.RoomStateMessage state;
+                    do {
+                        state = member.readUntil(tankops.common.net.lobby.RoomStateMessage.class);
+                    } while (!state.readyPlayerNames().contains("Tail" + (i + 1)));
+                }
+                clients.get(0).send(new ChatMessage("Tail1", "/start"));
+                for (int i = 0; i < 5; i++) {
+                    SnapshotMessage snapshot = clients.get(i).readUntil(SnapshotMessage.class);
+                    assertEquals(Set.of("Tail1", "Tail2", "Tail3", "Tail4", "Tail5"),
+                            snapshot.tanks().stream().map(t -> t.id()).collect(Collectors.toSet()));
+                }
+                clients.get(4).socket.close();
+                SnapshotMessage afterDisconnect;
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                do {
+                    assertTrue(System.nanoTime() < deadline, "Departed player's tank must be removed");
+                    afterDisconnect = clients.get(0).readUntil(SnapshotMessage.class);
+                } while (afterDisconnect.tanks().stream().anyMatch(t -> t.id().equals("Tail5")));
+                assertEquals(4, afterDisconnect.tanks().size());
+                assertTrue(!afterDisconnect.gameOver());
+            } finally {
+                for (FakeClient client : clients) client.socket.close();
+                server.getRoomManager().listRooms().forEach(GameRoom::stopGame);
+            }
+        }
+    }
 
     // Client giả rất đơn giản: gửi tin, đọc tin
     private static class FakeClient {

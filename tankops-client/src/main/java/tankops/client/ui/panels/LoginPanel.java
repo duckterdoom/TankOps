@@ -26,8 +26,9 @@ public class LoginPanel extends JPanel {
         subTitle.setFont(new Font("Arial", Font.BOLD, 12));
         subTitle.setForeground(Color.LIGHT_GRAY);
 
-        JTextField nameField = new JTextField("Player1", 15);
-        JTextField hostField = new JTextField("localhost:5555", 15);
+        JTextField nameField = new JTextField(ClientConfig.getUsername(), 15);
+        JTextField hostField = new JTextField(ClientConfig.getServerAddress(), 15);
+        hostField.setToolTipText("IP Tailscale của Ubuntu hoặc tên DNS, ví dụ 100.80.10.20:5555");
         styleTextField(nameField);
         styleTextField(hostField);
 
@@ -48,8 +49,14 @@ public class LoginPanel extends JPanel {
                 return;
             }
 
+            try {
+                ClientConfig.setServerAddress(serverAdd);
+            } catch (IllegalArgumentException error) {
+                JOptionPane.showMessageDialog(this, error.getMessage(), "Địa chỉ server", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             ClientConfig.setUsername(username);
-            ClientConfig.setServerAddress(serverAdd);
+            ClientConfig.saveSettings();
 
             if (mainFrame.getGameStateStore() != null) {
                 mainFrame.getGameStateStore().setAssignedPlayerId(username);
