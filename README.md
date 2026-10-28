@@ -1,5 +1,7 @@
 # TankOps
 
+Nhánh `test_main` chứa sẵn `TankOps.exe` cho người chơi Windows x64 và `TankOps-Ubuntu.zip` cho máy chủ Ubuntu. Sau khi clone hoặc tải ZIP mã nguồn và giải nén, có thể dùng ngay hai tệp này, không cần build lại. Người chơi chỉ cần `TankOps.exe`; địa chỉ server do người chạy server cung cấp.
+
 Nhấp đúp **`TankOps.exe`** ngay ở thư mục gốc để mở game, không cần vào IDE.
 
 Chỉ cần **một file `TankOps.exe`** để chơi hoặc gửi sang máy Windows x64 khác.

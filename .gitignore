@@ -18,7 +18,5 @@ target/
 *.log
 downloads/
 
-# Windows application with bundled Java runtime
+# Intermediate Windows build output
 dist/
-/TankOps.exe
-/TankOps-Ubuntu.zip
