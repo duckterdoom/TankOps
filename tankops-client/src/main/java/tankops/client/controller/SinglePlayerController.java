@@ -45,7 +45,9 @@ public class SinglePlayerController {
 
         engine.handleMoveEvent(localPlayerId, moveDirection);
 
-        // TODO: Gọi hàm handleShootEvent(localPlayerId) khi đồng đội bổ sung tính năng bắn vào GameEngine
+        if (isShooting) {
+            engine.handleShootEvent(localPlayerId);
+        }
     }
 
     public void update() {

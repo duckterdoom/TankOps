@@ -6,6 +6,8 @@ import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import tankops.common.map.GameMap;
+import tankops.common.map.MapLoader;
 import tankops.server.game.RoomManager;
 
 /**
@@ -16,6 +18,8 @@ public class GameServer {
     private int port;
     private int maxClients;
     private RoomManager roomManager;
+    private int tickRate;
+    private String multiMapPath;
 
 
     // Danh sách client đang kết nối.
@@ -38,7 +42,12 @@ public class GameServer {
 
         int maxPlayers = Integer.parseInt(props.getProperty("room.maxPlayers", "5"));
         int maxRooms = Integer.parseInt(props.getProperty("server.maxRooms", "10"));
-        roomManager = new RoomManager(maxRooms, maxPlayers);
+        tickRate = Integer.parseInt(props.getProperty("game.tickRate", "30"));
+        multiMapPath = props.getProperty("game.multiMap", "/maps/map_multi.map");
+
+        // Số phòng tạo sẵn khi mở server (cũng là số phòng chờ tối thiểu luôn được giữ)
+        int defaultRooms = Integer.parseInt(props.getProperty("server.defaultRooms", "3"));
+        roomManager = new RoomManager(maxRooms, maxPlayers, defaultRooms);
     }
 
     // Mở cổng và bật thread chuyên nhận kết nối mới
@@ -64,6 +73,15 @@ public class GameServer {
 
     public RoomManager getRoomManager() {
         return roomManager;
+    }
+
+    public int getTickRate() {
+        return tickRate;
+    }
+
+    // Mỗi ván nạp bản đồ mới (engine sẽ sửa bản đồ trong lúc chơi, nên không dùng chung giữa các ván)
+    public GameMap loadMultiMap() {
+        return new MapLoader().loadMap(multiMapPath);
     }
 
     public synchronized boolean isFull() {
