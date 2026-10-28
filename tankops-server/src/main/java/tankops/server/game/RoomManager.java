@@ -137,6 +137,12 @@ public class RoomManager {
 
     private void addToRoom(GameRoom room, ClientSession player) throws RoomFullException {
         GameRoom current = player.getCurrentRoom();
+        if (current == room) {
+            // Bấm vào lại đúng phòng mình đang ở (ví dụ vừa chơi xong rồi quay lại): coi như thành công.
+            // Phòng đã kết thúc thì đưa về phòng chờ để chơi lại.
+            room.resetToLobbyIfFinished();
+            return;
+        }
         if (current != null) {
             throw new IllegalStateException("Bạn đang ở trong phòng " + current.getId());
         }

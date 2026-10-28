@@ -271,8 +271,10 @@ class ServerStressTest {
 
         assertEquals(0, errors.size());
         for (GameRoom room : roomList) {
-            waitUntil(() -> room.getState() == RoomState.FINISHED);
-            assertEquals(RoomState.FINISHED, room.getState());
+            waitUntil(() -> room.getState() != RoomState.PLAYING);
+            // Hết ván rồi mà còn người rời phòng thì phòng quay về LOBBY (chơi lại được): cả hai đều đúng
+            RoomState end = room.getState();
+            assertTrue(end == RoomState.FINISHED || end == RoomState.LOBBY, "trạng thái cuối phải là FINISHED hoặc LOBBY, nhưng là " + end);
         }
 
         // Tick của mọi phòng phải đã dừng hẳn

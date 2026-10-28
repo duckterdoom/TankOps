@@ -49,7 +49,7 @@ public class MainFrame extends JFrame {
 
     private void setupGameEventListener() {
         this.gameStateStore.addStateChangeListener(() -> {
-            if (gameStateStore.isGameOver()) {
+            if (gameStateStore.takePendingGameOver()) {
                 SwingUtilities.invokeLater(() -> {
                     gamePanel.stopGame();
                     resultPanel.updateResults(gameStateStore, true);

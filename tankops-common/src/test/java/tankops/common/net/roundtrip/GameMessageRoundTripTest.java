@@ -115,4 +115,23 @@ class GameMessageRoundTripTest {
         assertTrue(decoded.powerUps().isEmpty());
         assertTrue(decoded.environments().isEmpty());
     }
+
+    @Test
+    @DisplayName("0x08: GameOverMessage round-trip kèm số kill và số lần bị hạ")
+    void testGameOverMessageWithKillsAndDeaths() throws ProtocolException {
+        GameOverMessage original = new GameOverMessage("An",
+                Map.of("An", 100, "Binh", 0), Map.of("An", 1, "Binh", 0), Map.of("An", 0, "Binh", 1));
+        GameOverMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(1, decoded.kills().get("An"));
+        assertEquals(1, decoded.deaths().get("Binh"));
+        assertEquals(100, decoded.scores().get("An"));
+    }
+
+    @Test
+    @DisplayName("GameOverMessage bản 2 tham số (cũ) có kill và death rỗng")
+    void testGameOverMessageOldConstructor() throws ProtocolException {
+        GameOverMessage decoded = NetworkTestSupport.assertRoundTrip(new GameOverMessage("An", Map.of("An", 100)));
+        assertTrue(decoded.kills().isEmpty());
+        assertTrue(decoded.deaths().isEmpty());
+    }
 }
