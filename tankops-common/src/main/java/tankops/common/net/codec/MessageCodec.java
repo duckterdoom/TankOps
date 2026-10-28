@@ -198,8 +198,6 @@ public final class MessageCodec {
                     out.writeBoolean(t.shielded());
                     out.writeBoolean(t.moving());
                     out.writeBoolean(t.destroyed());
-                    out.writeInt(t.lives());
-                    out.writeInt(t.score());
                 }
                 out.writeInt(m.bullets().size());
                 for (BulletSnapshot b : m.bullets()) {
@@ -230,6 +228,16 @@ public final class MessageCodec {
                 out.writeUTF(m.winnerId() != null ? m.winnerId() : "");
                 out.writeInt(m.scores().size());
                 for (Map.Entry<String, Integer> e : m.scores().entrySet()) {
+                    out.writeUTF(e.getKey());
+                    out.writeInt(e.getValue());
+                }
+                out.writeInt(m.kills().size());
+                for (Map.Entry<String, Integer> e : m.kills().entrySet()) {
+                    out.writeUTF(e.getKey());
+                    out.writeInt(e.getValue());
+                }
+                out.writeInt(m.deaths().size());
+                for (Map.Entry<String, Integer> e : m.deaths().entrySet()) {
                     out.writeUTF(e.getKey());
                     out.writeInt(e.getValue());
                 }
@@ -322,8 +330,7 @@ public final class MessageCodec {
                         in.readDouble(), in.readDouble(),
                         readDirection(in),
                         in.readInt(), in.readInt(), in.readInt(),
-                        in.readBoolean(), in.readBoolean(), in.readBoolean(),
-                        in.readInt(), in.readInt()
+                        in.readBoolean(), in.readBoolean(), in.readBoolean()
                     ));
                 }
 
@@ -362,7 +369,17 @@ public final class MessageCodec {
                 for (int i = 0; i < scoreCount; i++) {
                     scores.put(in.readUTF(), in.readInt());
                 }
-                yield new GameOverMessage(winner, scores);
+                int killCount = in.readInt();
+                Map<String, Integer> kills = new LinkedHashMap<>(killCount);
+                for (int i = 0; i < killCount; i++) {
+                    kills.put(in.readUTF(), in.readInt());
+                }
+                int deathCount = in.readInt();
+                Map<String, Integer> deaths = new LinkedHashMap<>(deathCount);
+                for (int i = 0; i < deathCount; i++) {
+                    deaths.put(in.readUTF(), in.readInt());
+                }
+                yield new GameOverMessage(winner, scores, kills, deaths);
             }
 
             case EventMessage.TYPE_ID -> {

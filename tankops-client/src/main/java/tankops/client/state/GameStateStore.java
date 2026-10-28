@@ -29,6 +29,8 @@ public class GameStateStore implements MessageListener {
     private final AtomicReference<SnapshotMessage> latestSnapshot = new AtomicReference<>(null);
     private volatile JoinResponseMessage joinInfo = null;
     private volatile GameOverMessage gameOverState = null;
+    // true từ lúc nhận GameOverMessage cho tới khi màn hình kết quả đã được mở (chỉ mở đúng 1 lần mỗi ván)
+    private final java.util.concurrent.atomic.AtomicBoolean gameOverPending = new java.util.concurrent.atomic.AtomicBoolean(false);
     private volatile boolean inGame = false;
     private volatile List<RoomInfo> currentRoomList = Collections.emptyList();
 
@@ -73,6 +75,7 @@ public class GameStateStore implements MessageListener {
             }
             case GameOverMessage over -> {
                 gameOverState = over;
+                gameOverPending.set(true);
                 inGame        = false;
                 notifyStateChanged();
             }
@@ -81,6 +84,7 @@ public class GameStateStore implements MessageListener {
                     joinInfo = join;
                     inGame   = false;
                     gameOverState = null;
+                    gameOverPending.set(false);
                     latestSnapshot.set(null);
                     // [UPDATE]: Cập nhật ID chính thức do Server cấp nếu có
                     if (join.assignedPlayerId() != null) {
@@ -164,6 +168,28 @@ public class GameStateStore implements MessageListener {
         return gameOverState;
     }
 
+    /**
+     * Trả về true ĐÚNG MỘT LẦN sau mỗi GameOverMessage. Các nơi muốn mở màn hình kết quả phải hỏi hàm này,
+     * để không bị mở lại mỗi lần danh sách phòng cập nhật (lỗi cũ: bấm vào lại phòng là nhảy về màn kết quả).
+     */
+    public boolean takePendingGameOver() {
+        return gameOverPending.getAndSet(false);
+    }
+
+    /**
+     * Gọi khi rời màn hình kết quả (về lobby/menu): xóa trạng thái của ván cũ và của phòng cũ.
+     */
+    public void resetAfterGame() {
+        gameOverState = null;
+        gameOverPending.set(false);
+        inGame = false;
+        latestSnapshot.set(null);
+        joinInfo = null;
+        roomPlayerNames = Collections.emptyList();
+        readyPlayerNames = Collections.emptyList();
+        notifyStateChanged();
+    }
+
     public Map<String, Integer> getScores() {
         GameOverMessage over = gameOverState;
         return over != null ? over.scores() : Collections.emptyMap();
@@ -214,6 +240,12 @@ public class GameStateStore implements MessageListener {
 
     // Kiểm tra xem Client này có phải là Host (Player #1) hay không
     public boolean isHost() {
+        // Chủ phòng là người đứng đầu danh sách do server gửi (đổi người khi chủ phòng rời đi)
+        List<String> names = roomPlayerNames;
+        String me = getAssignedPlayerId();
+        if (names != null && !names.isEmpty() && me != null) {
+            return names.get(0).equals(me);
+        }
         JoinResponseMessage info = joinInfo;
         return info != null && info.playerNumber() == 1;
     }
