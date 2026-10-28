@@ -17,13 +17,20 @@ public record TankSnapshot(
         int starLevel,
         boolean shielded,
         boolean moving,
-        boolean destroyed
+        boolean destroyed,
+        int lives,
+        int score
 ) {
     public TankSnapshot {
         Objects.requireNonNull(id, "id cannot be null");
         if (maxHealth <= 0) {
             throw new IllegalArgumentException("maxHealth must be > 0");
         }
+    }
+
+    public TankSnapshot(String id, double x, double y, Direction direction, int health,
+                        int maxHealth, int starLevel, boolean shielded, boolean moving, boolean destroyed) {
+        this(id, x, y, direction, health, maxHealth, starLevel, shielded, moving, destroyed, 1, 0);
     }
 }
 

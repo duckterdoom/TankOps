@@ -19,6 +19,7 @@ import java.util.Map;
 public class ResultPanel extends JPanel {
     private final JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 25, 10));
     private final MainFrame mainFrame;
+    private GameStateStore currentStore; // kho trạng thái của ván vừa chơi (để rời phòng khi bấm nút)
     private final DefaultTableModel tableModel;
     private final JLabel titleLabel;
     private final JLabel subTitleLabel;
@@ -137,6 +138,7 @@ public class ResultPanel extends JPanel {
     }
 
     public void updateResults(GameStateStore gameStateStore, boolean isMultiplayer) {
+        this.currentStore = gameStateStore;
         setupButtons(isMultiplayer);
         tableModel.setRowCount(0);
 
@@ -144,11 +146,12 @@ public class ResultPanel extends JPanel {
             GameOverMessage gameOver = gameStateStore.getGameOverState();
             String localPlayerId = gameStateStore.getAssignedPlayerId();
 
-            if (gameOver != null && gameOver.scores() != null) {
+            if (gameOver != null && gameOver.scores() != null && !gameOver.scores().isEmpty()) {
                 Map<String, Integer> scores = gameOver.scores();
                 String winnerId = gameOver.winnerId();
 
-                if (localPlayerId != null && localPlayerId.equals(winnerId)) {
+                boolean isVictory = (winnerId != null && localPlayerId != null && winnerId.equalsIgnoreCase(localPlayerId));
+                if (isVictory) {
                     titleLabel.setText("VICTORY!");
                     titleLabel.setForeground(new Color(50, 205, 50));
                 } else {
@@ -156,28 +159,60 @@ public class ResultPanel extends JPanel {
                     titleLabel.setForeground(new Color(220, 50, 50));
                 }
 
-                int rank = 1;
+                java.util.List<Map.Entry<String, Integer>> sortedList = new java.util.ArrayList<>();
+                Map.Entry<String, Integer> winnerEntry = null;
+
                 for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+                    if (winnerId != null && entry.getKey().equalsIgnoreCase(winnerId)) {
+                        winnerEntry = entry;
+                    } else {
+                        sortedList.add(entry);
+                    }
+                }
+
+                // Sắp xếp danh sách người thua theo Score giảm dần
+                sortedList.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+
+                // Đưa Người thắng (Winner) lên vị trí đầu tiên (Index 0) nếu có
+                if (winnerEntry != null) {
+                    sortedList.add(0, winnerEntry);
+                }
+
+                //ĐƯA DỮ LIỆU ĐÃ SẮP XẾP LÊN BẢNG RESULT
+                int rank = 1;
+                for (Map.Entry<String, Integer> entry : sortedList) {
                     String pId = entry.getKey();
                     int score = entry.getValue();
 
-                    boolean isWinner = pId.equals(winnerId);
-                    String status = isWinner ? "MVP" : "DEFEATED";
-                    if (pId.equals(localPlayerId)) {
-                        pId += " (YOU)";
+                    boolean isWinner = (winnerId != null && winnerId.equalsIgnoreCase(pId));
+                    String status = isWinner ? "MVP / WINNER" : "DEFEATED";
+
+                    boolean isMe = (localPlayerId != null && localPlayerId.equalsIgnoreCase(pId));
+
+                    String displayName = pId;
+                    if (isMe) {
+                        displayName += " (YOU)";
                     }
+
+                    // Số kill/death do SERVER đếm. Nếu server cũ không gửi thì mới dùng cách ước lượng.
+                    String killsText = gameOver.kills().containsKey(pId)
+                            ? String.valueOf(gameOver.kills().get(pId))
+                            : String.valueOf(score / 100);
+                    String deathsText = gameOver.deaths().containsKey(pId)
+                            ? String.valueOf(gameOver.deaths().get(pId))
+                            : (isWinner ? "0" : "1");
 
                     tableModel.addRow(new Object[]{
                             "#" + rank++,
-                            pId,
-                            "-",
-                            "-",
+                            displayName,
+                            killsText,
+                            deathsText,
                             score,
                             status
                     });
                 }
             } else {
-                tableModel.addRow(new Object[]{"#1", "Local Player", 0, 0, 0, "FINISHED"});
+                tableModel.addRow(new Object[]{"#1", "Waiting for server...", 0, 0, 0, "FINISHED"});
             }
         } else {
             titleLabel.setText("GAME OVER");
@@ -186,14 +221,35 @@ public class ResultPanel extends JPanel {
         }
     }
 
+    /** Báo server mình rời phòng rồi xóa trạng thái ván cũ, để lần vào phòng sau bắt đầu từ phòng chờ. */
+    private void leaveRoomAndResetState() {
+        GameStateStore store = currentStore;
+        if (store == null) {
+            return;
+        }
+        String roomId = store.getCurrentRoomId();
+        String playerId = store.getAssignedPlayerId();
+        if (roomId != null && playerId != null) {
+            tankops.client.net.NetworkClient.getInstance()
+                    .sendMessage(new tankops.common.net.lobby.LeaveRoomMessage(roomId, playerId));
+        }
+        store.resetAfterGame();
+    }
+
     private void setupButtons(boolean isMultiplayer) {
         actionPanel.removeAll();
 
         if (isMultiplayer) {
             JButton lobbyBtn = createStyleButton("BACK TO LOBBY", new Color(70, 130, 180));
             JButton menuBtn = createStyleButton("MAIN MENU", new Color(178, 34, 34));
-            lobbyBtn.addActionListener(e -> leaveMatch(ScreenState.LOBBY));
-            menuBtn.addActionListener(e -> leaveMatch(ScreenState.MODE_SELECT));
+            lobbyBtn.addActionListener(e -> {
+                leaveRoomAndResetState();
+                mainFrame.showScreen(ScreenState.LOBBY);
+            });
+            menuBtn.addActionListener(e -> {
+                leaveRoomAndResetState();
+                mainFrame.showScreen(ScreenState.MODE_SELECT);
+            });
 
             actionPanel.add(lobbyBtn);
             actionPanel.add(menuBtn);

@@ -5,6 +5,7 @@ import tankops.client.state.GameStateStore;
 import tankops.client.state.InputHandler;
 import tankops.common.model.common.Direction;
 import tankops.common.net.game.InputMessage;
+import tankops.common.net.lobby.JoinRoomMessage;
 
 import javax.swing.Timer;
 
@@ -56,6 +57,19 @@ public class MultiplayerController {
         isRunning = false;
         if (inputTimer != null) {
             inputTimer.stop();
+        }
+    }
+
+    public void requestCreateRoom() {
+        if (networkClient != null && networkClient.isConnected()) {
+            String playerName = gameStateStore.getAssignedPlayerId();
+            if (playerName == null || playerName.isBlank()) {
+                playerName = "Player_" + (System.currentTimeMillis() % 1000);
+            }
+
+            // Truyền "new" chuẩn xác theo RoomManager.NEW_ROOM
+            JoinRoomMessage createMsg = new JoinRoomMessage("new", playerName);
+            networkClient.sendMessage(createMsg);
         }
     }
 }

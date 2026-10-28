@@ -40,6 +40,7 @@ public class GamePanel extends JPanel {
     private GameStateStore gameStateStore;
 
     private GameState multiMapState;
+    private GameStateStore.StateChangeListener gameListener;
     private java.util.List<Environment> multiStaticEnvironments = new java.util.ArrayList<>();
 
     private boolean isMultiplayer = false;
@@ -114,14 +115,19 @@ public class GamePanel extends JPanel {
         this.multiController = new MultiplayerController(inputHandler, gameStateStore);
         this.multiController.start();
 
-        this.gameStateStore.addStateChangeListener(() -> {
-            // Kiểm tra nếu Multiplayer kết thúc từ server
-            if (gameStateStore.isGameOver()) {
+        // Chỉ giữ MỘT listener: bỏ cái của ván trước (trước đây mỗi ván thêm một cái mà không bao giờ gỡ)
+        if (gameListener != null) {
+            gameStateStore.removeStateChangeListener(gameListener);
+        }
+        gameListener = () -> {
+            // Ván vừa kết thúc từ server: mở màn kết quả ĐÚNG MỘT LẦN
+            if (gameStateStore.takePendingGameOver()) {
                 SwingUtilities.invokeLater(this::handleGameOver);
             } else {
                 repaint();
             }
-        });
+        };
+        this.gameStateStore.addStateChangeListener(gameListener);
         requestFocusInWindow();
     }
 
@@ -166,9 +172,9 @@ public class GamePanel extends JPanel {
                             }
                         }
 
-                        // 🟢 3. ĐẾM KILLS: Nếu xe địch frame trước có mà frame này biến mất (do cleanupDestroyedTanks xóa)
+                        // ĐẾM KILLS: Nếu xe địch frame trước có mà frame này biến mất (do cleanupDestroyedTanks xóa)
                         for (String prevEnemyId : new java.util.HashSet<>(activeEnemyIds)) {
-                            if (!currentEnemyIds.contains(prevEnemyId) && !currentEnemyIds.contains(prevEnemyId)) {
+                            if (!currentEnemyIds.contains(prevEnemyId)) {
                                 killCount++;
                                 activeEnemyIds.remove(prevEnemyId);
                             }
@@ -324,6 +330,7 @@ public class GamePanel extends JPanel {
                         multiMapState,
                         gameStateStore.getTanks(),
                         gameStateStore.getBullets(),
+                        gameStateStore.getActiveExplosions(),
                         gameStateStore.getAssignedPlayerId(),
                         getWidth(),
                         getHeight()

@@ -1,5 +1,6 @@
 package tankops.client.ui.render;
 
+import tankops.client.state.GameStateStore;
 import tankops.common.engine.GameState;
 import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
@@ -367,7 +368,7 @@ public class GameRenderer {
     }
 
     public void renderSnapshots(Graphics2D g2d, GameState mapState, List<TankSnapshot> tanks,
-                                List<BulletSnapshot> bullets, String localPlayerId,
+                                List<BulletSnapshot> bullets, List<GameStateStore.ExplosionEffect> explosions, String localPlayerId,
                                 int panelWidth, int panelHeight) {
         long currentTime = System.currentTimeMillis();
         int animFrame = (int) ((currentTime / 150) % 2);
@@ -413,6 +414,17 @@ public class GameRenderer {
                 }
 
                 drawTank(g2d, tank.x(), tank.y(), tankSprite, fallbackColor, tank.health(), tank.maxHealth());
+                if (tank.shielded()) {
+                    int drawX = (int) tank.x();
+                    int drawY = (int) tank.y();
+
+                    g2d.setColor(new Color(0, 225, 255, 100));
+                    g2d.fillOval(drawX - 5, drawY - 5, TANK_SIZE + 10, TANK_SIZE + 10);
+
+                    g2d.setColor(Color.CYAN);
+                    g2d.setStroke(new BasicStroke(2.0f));
+                    g2d.drawOval(drawX - 5, drawY - 5, TANK_SIZE + 10, TANK_SIZE + 10);
+                }
             }
         }
 
@@ -435,6 +447,35 @@ public class GameRenderer {
             }
         }
 
+        if (explosions != null && !explosions.isEmpty()) {
+            long now = System.currentTimeMillis();
+            for (GameStateStore.ExplosionEffect exp : explosions) {
+                long elapsed = now - exp.spawnTime();
+
+                BufferedImage blastImg;
+                if (exp.isBig()) {
+                    // Nổ lớn (xe nổ): có 2 frame (0 và 1), đổi frame mỗi 100ms
+                    int frame = (int) (elapsed / 100) % 2;
+                    blastImg = spriteManager.getSprite("blast_big_" + frame);
+                } else {
+                    // Nổ nhỏ (đạn nổ): có 3 frame (0, 1, 2), đổi frame mỗi 70ms
+                    int frame = (int) (elapsed / 70) % 3;
+                    blastImg = spriteManager.getSprite("blast_small_" + frame);
+                }
+
+                if (blastImg != null) {
+                    int drawX = (int) exp.x() - blastImg.getWidth() / 2;
+                    int drawY = (int) exp.y() - blastImg.getHeight() / 2;
+                    g2d.drawImage(blastImg, drawX, drawY, null);
+                } else {
+                    // Fallback phòng trường hợp chưa nạp được ảnh
+                    g2d.setColor(exp.isBig() ? Color.RED : Color.ORANGE);
+                    int size = exp.isBig() ? 32 : 14;
+                    g2d.fillOval((int) exp.x() - size / 2, (int) exp.y() - size / 2, size, size);
+                }
+            }
+        }
+
         if (mapState != null) {
             renderEnvironmentByLayer(g2d, mapState, Trees.class, animFrame);
         }
@@ -444,14 +485,33 @@ public class GameRenderer {
 
         g2d.setTransform(oldTransform);
 
-        renderMultiHUDOverlay(g2d, panelWidth);
+        renderMultiHUDOverlay(g2d, tanks, localPlayerId, panelWidth);
     }
 
-    private void renderMultiHUDOverlay(Graphics2D g2d, int panelWidth) {
+    private void renderMultiHUDOverlay(Graphics2D g2d, List<TankSnapshot> tanks, String localPlayerId, int panelWidth) {
         g2d.setColor(Color.WHITE);
         g2d.setFont(new Font("Impact", Font.PLAIN, 18));
         g2d.drawString("MULTIPLAYER MODE", 25, 30);
         g2d.drawString("ONLINE", panelWidth - 120, 30);
+
+        if (tanks != null && localPlayerId != null) {
+            for (TankSnapshot tank : tanks) {
+                if (tank.id().equals(localPlayerId)) {
+                    int lives = tank.lives();
+                    int score = tank.score();
+
+                    // 1. Vẽ số mạng (LIVES)
+                    g2d.setColor(new Color(240, 190, 40));
+                    g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+                    g2d.drawString("LIVES: " + lives, 240, 30);
+
+                    // 2. Vẽ điểm số (SCORE) màu xanh lá nổi bật
+                    g2d.setColor(new Color(50, 205, 50));
+                    g2d.drawString("SCORE: " + score, 360, 30);
+                    break;
+                }
+            }
+        }
     }
 
     private boolean isTankShielded(PlayerTank player) {

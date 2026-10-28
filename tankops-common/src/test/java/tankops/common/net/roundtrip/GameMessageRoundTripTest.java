@@ -108,11 +108,43 @@ class GameMessageRoundTripTest {
     }
 
     @Test
+    @DisplayName("0x07: SnapshotMessage round-trip kèm danh sách âm thanh; bản cũ có danh sách âm thanh rỗng")
+    void testSnapshotMessageWithSounds() throws ProtocolException {
+        SnapshotMessage original = new SnapshotMessage(
+                5, List.of(), List.of(), false, null, List.of(), List.of(),
+                List.of("shoot.wav", "tank_exploded.wav"));
+        SnapshotMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(List.of("shoot.wav", "tank_exploded.wav"), decoded.sounds());
+
+        SnapshotMessage old = new SnapshotMessage(6, List.of(), List.of(), false, null);
+        assertTrue(NetworkTestSupport.assertRoundTrip(old).sounds().isEmpty());
+    }
+
+    @Test
     @DisplayName("SnapshotMessage bản 5 tham số (cũ) có danh sách vật phẩm và tường rỗng")
     void testSnapshotMessageOldConstructorHasEmptyLists() throws ProtocolException {
         SnapshotMessage original = new SnapshotMessage(1, List.of(), List.of(), false, null);
         SnapshotMessage decoded = NetworkTestSupport.assertRoundTrip(original);
         assertTrue(decoded.powerUps().isEmpty());
         assertTrue(decoded.environments().isEmpty());
+    }
+
+    @Test
+    @DisplayName("0x08: GameOverMessage round-trip kèm số kill và số lần bị hạ")
+    void testGameOverMessageWithKillsAndDeaths() throws ProtocolException {
+        GameOverMessage original = new GameOverMessage("An",
+                Map.of("An", 100, "Binh", 0), Map.of("An", 1, "Binh", 0), Map.of("An", 0, "Binh", 1));
+        GameOverMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(1, decoded.kills().get("An"));
+        assertEquals(1, decoded.deaths().get("Binh"));
+        assertEquals(100, decoded.scores().get("An"));
+    }
+
+    @Test
+    @DisplayName("GameOverMessage bản 2 tham số (cũ) có kill và death rỗng")
+    void testGameOverMessageOldConstructor() throws ProtocolException {
+        GameOverMessage decoded = NetworkTestSupport.assertRoundTrip(new GameOverMessage("An", Map.of("An", 100)));
+        assertTrue(decoded.kills().isEmpty());
+        assertTrue(decoded.deaths().isEmpty());
     }
 }

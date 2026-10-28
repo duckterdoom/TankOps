@@ -50,6 +50,10 @@ public class GameRoom {
     private volatile RoomState state = RoomState.LOBBY;
     private volatile boolean finishRequested = false; // thread khác bật cờ này để xin kết thúc ván
     private final Map<String, Integer> scores = new LinkedHashMap<>(); // playerId -> điểm
+    private final Map<String, Integer> kills = new LinkedHashMap<>();  // playerId -> số lần hạ xe người khác
+    private final Map<String, Integer> deaths = new LinkedHashMap<>(); // playerId -> số lần bị hạ
+    private final Map<String, Boolean> aliveLastTick = new LinkedHashMap<>(); // chỉ thread tick đụng vào
+    private final List<String> pendingSounds = new ArrayList<>(); // âm thanh chờ gửi, chỉ thread tick đụng vào
     private String winnerId = null; // null = chưa xong hoặc hòa
 
     // ---- T15: tick ----
@@ -79,7 +83,25 @@ public class GameRoom {
 
     // Chỉ cho vào khi phòng còn ở LOBBY. Phòng đã PLAYING/FINISHED thì từ chối.
     // synchronized: "kiểm tra trạng thái + kiểm tra chỗ + thêm người" là một khối không bị chen ngang.
+    /**
+     * Ván đã kết thúc (FINISHED) thì đưa phòng về phòng chờ (LOBBY) để chơi lại: xóa READY, bỏ engine cũ.
+     * Người chơi vẫn ở lại trong phòng. Phòng chưa kết thúc thì không làm gì.
+     */
+    public synchronized void resetToLobbyIfFinished() {
+        if (state != RoomState.FINISHED) {
+            return;
+        }
+        readyPlayers.clear();
+        inputQueue.clear();
+        engine = null;
+        winnerId = null;
+        finishRequested = false;
+        tickCount = 0;
+        state = RoomState.LOBBY;
+    }
+
     public synchronized void addPlayer(ClientSession player) throws RoomFullException {
+        resetToLobbyIfFinished(); // vào phòng vừa chơi xong thì thấy phòng chờ, không phải phòng "đã kết thúc"
         if (state != RoomState.LOBBY) {
             throw new IllegalStateException("Phòng " + id + " đã bắt đầu, không thể vào");
         }
@@ -95,6 +117,10 @@ public class GameRoom {
         readyPlayers.remove(player.getPlayerName()); // Xóa trạng thái ready khi thoát
         if (player.getCurrentRoom() == this) {
             player.setCurrentRoom(null);
+        }
+
+        if (state == RoomState.FINISHED) {
+            resetToLobbyIfFinished(); // có người rời sau khi hết ván: phòng quay về trạng thái chờ
         }
 
         if (state == RoomState.PLAYING) {
@@ -136,17 +162,26 @@ public class GameRoom {
         engine = new GameEngine(map);
         // Engine báo "có người hạ xe" -> cộng điểm cho người bắn. (Hàm này chạy trên thread tick)
         engine.setOnKillCallback(this::addKill);
+        // Engine báo âm thanh (bắn, nổ, ăn vật phẩm...) -> gom lại, gửi kèm snapshot kế tiếp. (Chạy trên thread tick)
+        engine.setOnSoundCallback(pendingSounds::add);
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
             String name = p.getPlayerName();
             ids.add(name);
             scores.put(name, 0);
+            kills.put(name, 0);
+            deaths.put(name, 0);
         }
         engine.spawnPlayers(ids, map.getPlayerSpawnPoints());
 
         finishRequested = false;
         winnerId = null;
+        aliveLastTick.clear();
+        pendingSounds.clear();
+        for (String id : ids) {
+            aliveLastTick.put(id, true);
+        }
         state = RoomState.PLAYING;
 
         tickLoop = new TickLoop(tickRate);
@@ -182,10 +217,21 @@ public class GameRoom {
     }
 
     public void addKill(String killerId) {
+        synchronized (this) {
+            kills.merge(killerId, 1, Integer::sum);
+        }
         addScore(killerId, KILL_POINTS);
     }
 
     // Trả về BẢN SAO để bên ngoài không sửa trực tiếp vào bảng điểm thật
+    public synchronized Map<String, Integer> getKills() {
+        return new LinkedHashMap<>(kills);
+    }
+
+    public synchronized Map<String, Integer> getDeaths() {
+        return new LinkedHashMap<>(deaths);
+    }
+
     public synchronized Map<String, Integer> getScores() {
         return new LinkedHashMap<>(scores);
     }
@@ -237,6 +283,7 @@ public class GameRoom {
 
         engine.update();
         tickCount++;
+        countDeaths();
 
         if (isGameOver()) {
             finishGame();
@@ -247,6 +294,29 @@ public class GameRoom {
     }
 
     // Hết ván khi: có người xin kết thúc, hoặc engine báo hết, hoặc chỉ còn tối đa 1 xe sống
+    /**
+     * Đếm số lần mỗi người chơi bị hạ: mỗi lần xe chuyển từ "còn sống" sang "không còn" thì tính 1 lần chết.
+     * Chỉ thread tick gọi (cùng thread với engine) nên đọc engine an toàn.
+     */
+    private void countDeaths() {
+        Map<String, Boolean> aliveNow = new LinkedHashMap<>();
+        for (Tank t : engine.getGameState().getTanks()) {
+            if (t instanceof PlayerTank && !t.isDestroyed()) {
+                aliveNow.put(t.getId(), true);
+            }
+        }
+        for (Map.Entry<String, Boolean> e : aliveLastTick.entrySet()) {
+            boolean wasAlive = e.getValue();
+            boolean isAlive = aliveNow.containsKey(e.getKey());
+            if (wasAlive && !isAlive) {
+                synchronized (this) {
+                    deaths.merge(e.getKey(), 1, Integer::sum);
+                }
+            }
+            e.setValue(isAlive);
+        }
+    }
+
     private boolean isGameOver() {
         return finishRequested
                 || engine.getGameState().isGameOver()
@@ -276,7 +346,7 @@ public class GameRoom {
                 tickLoop.stop();   // shutdownNow không chờ, nên không bị đứng máy
                 tickLoop = null;
             }
-            gameOverMsg = new GameOverMessage(winnerId, getScores());
+            gameOverMsg = new GameOverMessage(winnerId, getScores(), getKills(), getDeaths());
         }
         broadcast(gameOverMsg); // gửi mạng NGOÀI khóa
     }
@@ -295,6 +365,16 @@ public class GameRoom {
         return found;
     }
 
+    /** Lấy và xóa các âm thanh đã gom từ lần snapshot trước. Chỉ gọi trên thread tick. */
+    private List<String> drainSounds() {
+        if (pendingSounds.isEmpty()) {
+            return List.of();
+        }
+        List<String> copy = new ArrayList<>(pendingSounds);
+        pendingSounds.clear();
+        return copy;
+    }
+
     public SnapshotMessage buildBinarySnapshot() {
         GameState gameState = engine.getGameState();
         List<TankSnapshot> tankSnapshots = new ArrayList<>();
@@ -305,6 +385,8 @@ public class GameRoom {
                 starLevel = pt.getStarLevel();
                 shielded = pt.isShielded();
             }
+            int lives = (t instanceof PlayerTank p) ? p.getLives() : 1;
+            int score = (t instanceof PlayerTank p) ? p.getScore() : 0;
             tankSnapshots.add(new TankSnapshot(
                     t.getId(),
                     t.getPosition().x(),
@@ -315,8 +397,11 @@ public class GameRoom {
                     starLevel,
                     shielded,
                     t.isMoving(),
-                    t.isDestroyed()
+                    t.isDestroyed(),
+                    lives,
+                    score
             ));
+
         }
 
         List<BulletSnapshot> bulletSnapshots = new ArrayList<>();
@@ -361,7 +446,8 @@ public class GameRoom {
                 state == RoomState.FINISHED,
                 winnerId,
                 powerUpSnapshots,
-                environmentSnapshots
+                environmentSnapshots,
+                drainSounds()
         );
     }
 

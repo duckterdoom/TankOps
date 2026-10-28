@@ -30,6 +30,8 @@ public class GameStateStore implements MessageListener {
     private volatile JoinResponseMessage joinInfo = null;
     private final AtomicReference<String> joinError = new AtomicReference<>();
     private volatile GameOverMessage gameOverState = null;
+    // true từ lúc nhận GameOverMessage cho tới khi màn hình kết quả đã được mở (chỉ mở đúng 1 lần mỗi ván)
+    private final java.util.concurrent.atomic.AtomicBoolean gameOverPending = new java.util.concurrent.atomic.AtomicBoolean(false);
     private volatile boolean inGame = false;
     private volatile List<RoomInfo> currentRoomList = Collections.emptyList();
 
@@ -39,6 +41,12 @@ public class GameStateStore implements MessageListener {
 
     // [UPDATE]: Biến lưu ID người chơi từ LoginPanel
     private volatile String localPlayerId = null;
+
+    public static record ExplosionEffect(double x, double y, boolean isBig, long spawnTime) {}
+
+    private final List<ExplosionEffect> activeExplosions = new CopyOnWriteArrayList<>();
+    private volatile List<TankSnapshot> previousTanks = Collections.emptyList();
+    private volatile List<BulletSnapshot> previousBullets = Collections.emptyList();
 
     public JoinResponseMessage getJoinInfo() {
         return joinInfo;
@@ -66,14 +74,22 @@ public class GameStateStore implements MessageListener {
             }
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
+                processExplosionDetection(snap.tanks(), snap.bullets());
+                // Phát âm thanh server gửi kèm snapshot (mỗi tick chỉ phát 1 lần)
+                for (String sound : snap.sounds()) {
+                    tankops.client.sound.SoundManager.getInstance().playSound(sound);
+                }
                 // Khi bắt đầu nhận SnapshotMessage -> tự động đánh dấu đang trong trận
                 if (!inGame && !snap.gameOver()) {
                     this.inGame = true;
+                    tankops.client.sound.SoundManager.getInstance().playSound("stage_start_up.wav");
                 }
                 notifyStateChanged();
             }
             case GameOverMessage over -> {
                 gameOverState = over;
+                tankops.client.sound.SoundManager.getInstance().playSound("game_over.wav");
+                gameOverPending.set(true);
                 inGame        = false;
                 notifyStateChanged();
             }
@@ -82,6 +98,7 @@ public class GameStateStore implements MessageListener {
                     joinInfo = join;
                     inGame   = false;
                     gameOverState = null;
+                    gameOverPending.set(false);
                     latestSnapshot.set(null);
                     // [UPDATE]: Cập nhật ID chính thức do Server cấp nếu có
                     if (join.assignedPlayerId() != null) {
@@ -182,6 +199,28 @@ public class GameStateStore implements MessageListener {
         return gameOverState;
     }
 
+    /**
+     * Trả về true ĐÚNG MỘT LẦN sau mỗi GameOverMessage. Các nơi muốn mở màn hình kết quả phải hỏi hàm này,
+     * để không bị mở lại mỗi lần danh sách phòng cập nhật (lỗi cũ: bấm vào lại phòng là nhảy về màn kết quả).
+     */
+    public boolean takePendingGameOver() {
+        return gameOverPending.getAndSet(false);
+    }
+
+    /**
+     * Gọi khi rời màn hình kết quả (về lobby/menu): xóa trạng thái của ván cũ và của phòng cũ.
+     */
+    public void resetAfterGame() {
+        gameOverState = null;
+        gameOverPending.set(false);
+        inGame = false;
+        latestSnapshot.set(null);
+        joinInfo = null;
+        roomPlayerNames = Collections.emptyList();
+        readyPlayerNames = Collections.emptyList();
+        notifyStateChanged();
+    }
+
     public Map<String, Integer> getScores() {
         GameOverMessage over = gameOverState;
         return over != null ? over.scores() : Collections.emptyMap();
@@ -232,6 +271,12 @@ public class GameStateStore implements MessageListener {
 
     // Kiểm tra xem Client này có phải là Host (Player #1) hay không
     public boolean isHost() {
+        // Chủ phòng là người đứng đầu danh sách do server gửi (đổi người khi chủ phòng rời đi)
+        List<String> names = roomPlayerNames;
+        String me = getAssignedPlayerId();
+        if (names != null && !names.isEmpty() && me != null) {
+            return names.get(0).equals(me);
+        }
         JoinResponseMessage info = joinInfo;
         return info != null && info.playerNumber() == 1;
     }
@@ -248,5 +293,52 @@ public class GameStateStore implements MessageListener {
 
     public void setInGame(boolean inGame) {
         this.inGame = inGame;
+    }
+
+    public List<ExplosionEffect> getActiveExplosions() {
+        long now = System.currentTimeMillis();
+        // Xóa các hiệu ứng nổ kéo dài quá 250ms
+        activeExplosions.removeIf(e -> now - e.spawnTime() > 250);
+        return activeExplosions;
+    }
+
+    private void processExplosionDetection(List<TankSnapshot> newTanks, List<BulletSnapshot> newBullets) {
+        long now = System.currentTimeMillis();
+
+        // 1. PHÁT HIỆN ĐẠN NỔ (Đạn frame trước có mà frame này biến mất)
+        if (previousBullets != null && !previousBullets.isEmpty()) {
+            java.util.Set<String> newBulletIds = new java.util.HashSet<>();
+            if (newBullets != null) {
+                for (BulletSnapshot b : newBullets) {
+                    newBulletIds.add(b.id());
+                }
+            }
+
+            for (BulletSnapshot oldB : previousBullets) {
+                if (!newBulletIds.contains(oldB.id())) {
+                    activeExplosions.add(new ExplosionEffect(oldB.x(), oldB.y(), false, now));
+                }
+            }
+        }
+
+        // 2. PHÁT HIỆN XE NỔ (Xe frame trước còn sống mà frame này bị destroyed/biến mất)
+        if (previousTanks != null && !previousTanks.isEmpty()) {
+            java.util.Map<String, TankSnapshot> newTankMap = new java.util.HashMap<>();
+            if (newTanks != null) {
+                for (TankSnapshot t : newTanks) {
+                    newTankMap.put(t.id(), t);
+                }
+            }
+
+            for (TankSnapshot oldT : previousTanks) {
+                TankSnapshot newT = newTankMap.get(oldT.id());
+                if (!oldT.destroyed() && (newT == null || newT.destroyed())) {
+                    activeExplosions.add(new ExplosionEffect(oldT.x() + 13, oldT.y() + 13, true, now));
+                }
+            }
+        }
+
+        this.previousTanks = newTanks != null ? new java.util.ArrayList<>(newTanks) : Collections.emptyList();
+        this.previousBullets = newBullets != null ? new java.util.ArrayList<>(newBullets) : Collections.emptyList();
     }
 }
