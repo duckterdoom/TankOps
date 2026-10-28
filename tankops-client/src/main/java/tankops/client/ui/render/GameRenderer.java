@@ -1,5 +1,6 @@
 package tankops.client.ui.render;
 
+import tankops.client.state.GameStateStore;
 import tankops.common.engine.GameState;
 import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
@@ -367,7 +368,7 @@ public class GameRenderer {
     }
 
     public void renderSnapshots(Graphics2D g2d, GameState mapState, List<TankSnapshot> tanks,
-                                List<BulletSnapshot> bullets, String localPlayerId,
+                                List<BulletSnapshot> bullets, List<GameStateStore.ExplosionEffect> explosions, String localPlayerId,
                                 int panelWidth, int panelHeight) {
         long currentTime = System.currentTimeMillis();
         int animFrame = (int) ((currentTime / 150) % 2);
@@ -442,6 +443,35 @@ public class GameRenderer {
                 } else {
                     g2d.setColor(Color.YELLOW);
                     g2d.fillOval((int) b.x() - 1, (int) b.y() - 1, 3, 3);
+                }
+            }
+        }
+
+        if (explosions != null && !explosions.isEmpty()) {
+            long now = System.currentTimeMillis();
+            for (GameStateStore.ExplosionEffect exp : explosions) {
+                long elapsed = now - exp.spawnTime();
+
+                BufferedImage blastImg;
+                if (exp.isBig()) {
+                    // Nổ lớn (xe nổ): có 2 frame (0 và 1), đổi frame mỗi 100ms
+                    int frame = (int) (elapsed / 100) % 2;
+                    blastImg = spriteManager.getSprite("blast_big_" + frame);
+                } else {
+                    // Nổ nhỏ (đạn nổ): có 3 frame (0, 1, 2), đổi frame mỗi 70ms
+                    int frame = (int) (elapsed / 70) % 3;
+                    blastImg = spriteManager.getSprite("blast_small_" + frame);
+                }
+
+                if (blastImg != null) {
+                    int drawX = (int) exp.x() - blastImg.getWidth() / 2;
+                    int drawY = (int) exp.y() - blastImg.getHeight() / 2;
+                    g2d.drawImage(blastImg, drawX, drawY, null);
+                } else {
+                    // Fallback phòng trường hợp chưa nạp được ảnh
+                    g2d.setColor(exp.isBig() ? Color.RED : Color.ORANGE);
+                    int size = exp.isBig() ? 32 : 14;
+                    g2d.fillOval((int) exp.x() - size / 2, (int) exp.y() - size / 2, size, size);
                 }
             }
         }

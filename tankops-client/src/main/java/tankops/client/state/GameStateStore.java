@@ -41,6 +41,12 @@ public class GameStateStore implements MessageListener {
     // [UPDATE]: Biến lưu ID người chơi từ LoginPanel
     private volatile String localPlayerId = null;
 
+    public static record ExplosionEffect(double x, double y, boolean isBig, long spawnTime) {}
+
+    private final List<ExplosionEffect> activeExplosions = new CopyOnWriteArrayList<>();
+    private volatile List<TankSnapshot> previousTanks = Collections.emptyList();
+    private volatile List<BulletSnapshot> previousBullets = Collections.emptyList();
+
     public JoinResponseMessage getJoinInfo() {
         return joinInfo;
     }
@@ -67,6 +73,7 @@ public class GameStateStore implements MessageListener {
             }
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
+                processExplosionDetection(snap.tanks(), snap.bullets());
                 // Khi bắt đầu nhận SnapshotMessage -> tự động đánh dấu đang trong trận
                 if (!inGame && !snap.gameOver()) {
                     this.inGame = true;
@@ -262,5 +269,52 @@ public class GameStateStore implements MessageListener {
 
     public void setInGame(boolean inGame) {
         this.inGame = inGame;
+    }
+
+    public List<ExplosionEffect> getActiveExplosions() {
+        long now = System.currentTimeMillis();
+        // Xóa các hiệu ứng nổ kéo dài quá 250ms
+        activeExplosions.removeIf(e -> now - e.spawnTime() > 250);
+        return activeExplosions;
+    }
+
+    private void processExplosionDetection(List<TankSnapshot> newTanks, List<BulletSnapshot> newBullets) {
+        long now = System.currentTimeMillis();
+
+        // 1. PHÁT HIỆN ĐẠN NỔ (Đạn frame trước có mà frame này biến mất)
+        if (previousBullets != null && !previousBullets.isEmpty()) {
+            java.util.Set<String> newBulletIds = new java.util.HashSet<>();
+            if (newBullets != null) {
+                for (BulletSnapshot b : newBullets) {
+                    newBulletIds.add(b.id());
+                }
+            }
+
+            for (BulletSnapshot oldB : previousBullets) {
+                if (!newBulletIds.contains(oldB.id())) {
+                    activeExplosions.add(new ExplosionEffect(oldB.x(), oldB.y(), false, now));
+                }
+            }
+        }
+
+        // 2. PHÁT HIỆN XE NỔ (Xe frame trước còn sống mà frame này bị destroyed/biến mất)
+        if (previousTanks != null && !previousTanks.isEmpty()) {
+            java.util.Map<String, TankSnapshot> newTankMap = new java.util.HashMap<>();
+            if (newTanks != null) {
+                for (TankSnapshot t : newTanks) {
+                    newTankMap.put(t.id(), t);
+                }
+            }
+
+            for (TankSnapshot oldT : previousTanks) {
+                TankSnapshot newT = newTankMap.get(oldT.id());
+                if (!oldT.destroyed() && (newT == null || newT.destroyed())) {
+                    activeExplosions.add(new ExplosionEffect(oldT.x() + 13, oldT.y() + 13, true, now));
+                }
+            }
+        }
+
+        this.previousTanks = newTanks != null ? new java.util.ArrayList<>(newTanks) : Collections.emptyList();
+        this.previousBullets = newBullets != null ? new java.util.ArrayList<>(newBullets) : Collections.emptyList();
     }
 }
