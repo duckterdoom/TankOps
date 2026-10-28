@@ -53,6 +53,7 @@ public class GameRoom {
     private final Map<String, Integer> kills = new LinkedHashMap<>();  // playerId -> số lần hạ xe người khác
     private final Map<String, Integer> deaths = new LinkedHashMap<>(); // playerId -> số lần bị hạ
     private final Map<String, Boolean> aliveLastTick = new LinkedHashMap<>(); // chỉ thread tick đụng vào
+    private final List<String> pendingSounds = new ArrayList<>(); // âm thanh chờ gửi, chỉ thread tick đụng vào
     private String winnerId = null; // null = chưa xong hoặc hòa
 
     // ---- T15: tick ----
@@ -159,6 +160,8 @@ public class GameRoom {
         engine = new GameEngine(map);
         // Engine báo "có người hạ xe" -> cộng điểm cho người bắn. (Hàm này chạy trên thread tick)
         engine.setOnKillCallback(this::addKill);
+        // Engine báo âm thanh (bắn, nổ, ăn vật phẩm...) -> gom lại, gửi kèm snapshot kế tiếp. (Chạy trên thread tick)
+        engine.setOnSoundCallback(pendingSounds::add);
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
@@ -173,6 +176,7 @@ public class GameRoom {
         finishRequested = false;
         winnerId = null;
         aliveLastTick.clear();
+        pendingSounds.clear();
         for (String id : ids) {
             aliveLastTick.put(id, true);
         }
@@ -354,6 +358,16 @@ public class GameRoom {
         return found;
     }
 
+    /** Lấy và xóa các âm thanh đã gom từ lần snapshot trước. Chỉ gọi trên thread tick. */
+    private List<String> drainSounds() {
+        if (pendingSounds.isEmpty()) {
+            return List.of();
+        }
+        List<String> copy = new ArrayList<>(pendingSounds);
+        pendingSounds.clear();
+        return copy;
+    }
+
     public SnapshotMessage buildBinarySnapshot() {
         GameState gameState = engine.getGameState();
         List<TankSnapshot> tankSnapshots = new ArrayList<>();
@@ -425,7 +439,8 @@ public class GameRoom {
                 state == RoomState.FINISHED,
                 winnerId,
                 powerUpSnapshots,
-                environmentSnapshots
+                environmentSnapshots,
+                drainSounds()
         );
     }
 
