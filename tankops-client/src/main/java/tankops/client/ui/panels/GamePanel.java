@@ -330,6 +330,7 @@ public class GamePanel extends JPanel {
                         multiMapState,
                         gameStateStore.getTanks(),
                         gameStateStore.getBullets(),
+                        gameStateStore.getActiveExplosions(),
                         gameStateStore.getAssignedPlayerId(),
                         getWidth(),
                         getHeight()
