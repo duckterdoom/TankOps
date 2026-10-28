@@ -172,9 +172,9 @@ public class GamePanel extends JPanel {
                             }
                         }
 
-                        // 🟢 3. ĐẾM KILLS: Nếu xe địch frame trước có mà frame này biến mất (do cleanupDestroyedTanks xóa)
+                        // ĐẾM KILLS: Nếu xe địch frame trước có mà frame này biến mất (do cleanupDestroyedTanks xóa)
                         for (String prevEnemyId : new java.util.HashSet<>(activeEnemyIds)) {
-                            if (!currentEnemyIds.contains(prevEnemyId) && !currentEnemyIds.contains(prevEnemyId)) {
+                            if (!currentEnemyIds.contains(prevEnemyId)) {
                                 killCount++;
                                 activeEnemyIds.remove(prevEnemyId);
                             }
