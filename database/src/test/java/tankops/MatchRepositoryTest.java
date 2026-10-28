@@ -1,4 +1,3 @@
-
 package tankops;
 
 import org.bson.Document;
@@ -14,54 +13,46 @@ public class MatchRepositoryTest {
     @Test
     public void testSaveSinglePlayerResult() {
 
-        // 1. Kết nối MongoDB
         MongoDatabaseManager dbManager = new MongoDatabaseManager();
         PlayerRepository playerRepo = new PlayerRepository(dbManager);
         MatchRepository matchRepo = new MatchRepository(dbManager, playerRepo);
 
-        String username = "TestPlayer";
+        String username = "TestPlayerNoPass";
 
         try {
-            // 2. Xóa tài khoản test cũ và tạo tài khoản mới
+            // 1. Xóa tài khoản cũ và đăng ký tài khoản mới (không cần password)
             playerRepo.deletePlayer(username);
-            playerRepo.registerPlayer(username, "123456");
+            playerRepo.registerPlayer(username);
 
-            // 3. Lưu kết quả trận đấu
-            matchRepo.saveSinglePlayerResult(
-                username, 1500, 5, 1, true
-            );
+            // 2. Lưu kết quả trận đấu
+            matchRepo.saveSinglePlayerResult(username, 1500, 5, 1, true);
 
-            // 4. Lấy thông tin người chơi từ MongoDB
+            // 3. Lấy thông tin người chơi từ MongoDB
             Document player = playerRepo.findByUsername(username);
             assertNotNull(player);
 
-            // 5. Lấy ID trận đấu mà người chơi đã lưu
-            List<ObjectId> matchIds =
-                player.getList("match_ids", ObjectId.class);
-
+            // 4. Lấy ID trận đấu mà người chơi đã lưu
+            List<ObjectId> matchIds = player.getList("match_ids", ObjectId.class);
             assertEquals(1, matchIds.size());
 
-            // 6. Tìm trận đấu bằng ID
+            // 5. Tìm trận đấu bằng ID vừa lưu
             Document match = dbManager.getDatabase()
-                .getCollection("matches")
-                .find(new Document("_id", matchIds.get(0)))
-                .first();
+                    .getCollection("matches")
+                    .find(new Document("_id", matchIds.get(0)))
+                    .first();
 
-            // 7. Kiểm tra kết quả
+            // 6. Kiểm tra kết quả trận đấu
             assertNotNull(match);
             assertEquals("SINGLE_PLAYER", match.getString("mode"));
             assertEquals(username, match.getString("winner_id"));
 
-            System.out.println("Test thành công!");
+            System.out.println("Test MatchRepository thành công!");
 
         } finally {
-            // 8. Xóa dữ liệu test và đóng kết nối
+            // Dọn dẹp dữ liệu test
             playerRepo.deletePlayer(username);
-
-            // Xóa thêm bản ghi trận đấu rác vừa tạo (nếu có)
             dbManager.getDatabase().getCollection("matches")
                     .deleteMany(new Document("winner_id", username));
-
             dbManager.close();
         }
     }
