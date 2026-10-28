@@ -16,41 +16,45 @@ public class PlayerRepository {
         playerCollection = dbManager.getDatabase().getCollection("players");
     }
 
-    // YÊU CẦU 1: Đăng ký (Có check trùng tên tài khoản)
-    public boolean registerPlayer(String username, String passwordHash) {
-        // Kiểm tra xem username đã tồn tại chưa
-        Document existingPlayer = playerCollection.find(Filters.eq("username", username)).first();
+    // 1. Tạo người chơi mới (Chỉ lưu username và danh sách match_ids)
+    public void createPlayer(String username) {
+        Document player = new Document("username", username)
+                .append("match_ids", new ArrayList<ObjectId>());
 
-        if (existingPlayer != null) {
-            System.out.println("Lỗi: Tên tài khoản '" + username + "' đã bị trùng!");
-            return false; // Trả về false, không cho tạo
-        }
-
-        // YÊU CẦU 2: Chỉ lưu name, pass và mảng chứa ID các trận đấu (match_ids)
-        Document newPlayer = new Document("username", username)
-                .append("password_hash", passwordHash)
-                .append("match_ids", new ArrayList<ObjectId>()); // Mảng rỗng chờ thêm ID trận đấu
-
-        playerCollection.insertOne(newPlayer);
-        System.out.println("✅ Đăng ký thành công tài khoản: " + username);
-        return true;
+        playerCollection.insertOne(player);
+        System.out.println("Đã thêm người chơi: " + username);
     }
 
-    // Tìm kiếm người chơi
+    // 2. Tìm người chơi theo username
     public Document findByUsername(String username) {
         return playerCollection.find(Filters.eq("username", username)).first();
     }
 
-    // Hàm mới: Thêm ID của trận đấu vào danh sách của người chơi (Sẽ gọi khi hết game)
+    // 3. Đăng ký tài khoản (Chỉ kiểm tra trùng tên username)
+    public boolean registerPlayer(String username) {
+        Document existingPlayer = findByUsername(username);
+
+        if (existingPlayer != null) {
+            System.out.println("❌ Tên tài khoản '" + username + "' đã bị trùng!");
+            return false;
+        }
+
+        createPlayer(username);
+        System.out.println("✅ Đăng ký tài khoản thành công: " + username);
+        return true;
+    }
+
+    // 4. Thêm ID trận đấu vào danh sách match_ids của người chơi
     public void addMatchId(String username, ObjectId matchId) {
         playerCollection.updateOne(
                 Filters.eq("username", username),
-                Updates.push("match_ids", matchId) // Push (đẩy) ID trận đấu vào mảng
+                Updates.push("match_ids", matchId)
         );
     }
 
-    // Xóa người chơi theo username (Dùng để dọn dẹp khi Test)
+    // 5. Xóa người chơi theo username (dùng dọn dẹp khi test)
     public void deletePlayer(String username) {
         playerCollection.deleteOne(Filters.eq("username", username));
+        System.out.println("Đã xóa người chơi: " + username);
     }
 }
