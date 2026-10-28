@@ -257,6 +257,10 @@ public class RoomPanel extends JPanel {
             NetworkClient.getInstance().sendMessage(new LeaveRoomMessage(roomId, playerId));
         }
 
+        // Xóa thông tin phòng cũ (joinInfo) để LobbyPanel không tự nhảy ngược lại vào phòng
+        if (gameStateStore != null) {
+            gameStateStore.resetAfterGame();
+        }
         mainFrame.showScreen(ScreenState.LOBBY);
     }
 
