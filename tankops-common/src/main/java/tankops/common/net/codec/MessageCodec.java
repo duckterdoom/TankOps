@@ -226,6 +226,11 @@ public final class MessageCodec {
                     out.writeDouble(e.x());
                     out.writeDouble(e.y());
                 }
+                // Âm thanh phát sinh trong tick này
+                out.writeInt(m.sounds().size());
+                for (String sound : m.sounds()) {
+                    out.writeUTF(sound);
+                }
             }
             case GameOverMessage m -> {
                 out.writeUTF(m.winnerId() != null ? m.winnerId() : "");
@@ -362,7 +367,12 @@ public final class MessageCodec {
                         in.readUTF(), in.readUTF(), in.readDouble(), in.readDouble()
                     ));
                 }
-                yield new SnapshotMessage(tick, tanks, bullets, over, winner, powerUps, envs);
+                int soundCount = in.readInt();
+                List<String> sounds = new ArrayList<>(soundCount);
+                for (int i = 0; i < soundCount; i++) {
+                    sounds.add(in.readUTF());
+                }
+                yield new SnapshotMessage(tick, tanks, bullets, over, winner, powerUps, envs, sounds);
             }
 
             case GameOverMessage.TYPE_ID -> {

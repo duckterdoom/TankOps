@@ -74,14 +74,20 @@ public class GameStateStore implements MessageListener {
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
                 processExplosionDetection(snap.tanks(), snap.bullets());
+                // Phát âm thanh server gửi kèm snapshot (mỗi tick chỉ phát 1 lần)
+                for (String sound : snap.sounds()) {
+                    tankops.client.sound.SoundManager.getInstance().playSound(sound);
+                }
                 // Khi bắt đầu nhận SnapshotMessage -> tự động đánh dấu đang trong trận
                 if (!inGame && !snap.gameOver()) {
                     this.inGame = true;
+                    tankops.client.sound.SoundManager.getInstance().playSound("stage_start_up.wav");
                 }
                 notifyStateChanged();
             }
             case GameOverMessage over -> {
                 gameOverState = over;
+                tankops.client.sound.SoundManager.getInstance().playSound("game_over.wav");
                 gameOverPending.set(true);
                 inGame        = false;
                 notifyStateChanged();

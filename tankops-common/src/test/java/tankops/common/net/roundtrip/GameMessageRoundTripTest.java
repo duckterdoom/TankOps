@@ -108,6 +108,19 @@ class GameMessageRoundTripTest {
     }
 
     @Test
+    @DisplayName("0x07: SnapshotMessage round-trip kèm danh sách âm thanh; bản cũ có danh sách âm thanh rỗng")
+    void testSnapshotMessageWithSounds() throws ProtocolException {
+        SnapshotMessage original = new SnapshotMessage(
+                5, List.of(), List.of(), false, null, List.of(), List.of(),
+                List.of("shoot.wav", "tank_exploded.wav"));
+        SnapshotMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(List.of("shoot.wav", "tank_exploded.wav"), decoded.sounds());
+
+        SnapshotMessage old = new SnapshotMessage(6, List.of(), List.of(), false, null);
+        assertTrue(NetworkTestSupport.assertRoundTrip(old).sounds().isEmpty());
+    }
+
+    @Test
     @DisplayName("SnapshotMessage bản 5 tham số (cũ) có danh sách vật phẩm và tường rỗng")
     void testSnapshotMessageOldConstructorHasEmptyLists() throws ProtocolException {
         SnapshotMessage original = new SnapshotMessage(1, List.of(), List.of(), false, null);
