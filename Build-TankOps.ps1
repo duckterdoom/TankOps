@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 
 try {
-    $jdk = & (Join-Path $projectRoot 'packaging\Find-Jdk.ps1') -JdkHome $JdkHome
+    $jdk = & (Join-Path $projectRoot 'packaging\Find-Jdk.ps1') -JdkHome $JdkHome -RequiredTools @('javac.exe', 'jar.exe', 'jlink.exe')
 
     $buildRoot = Join-Path $projectRoot ('target\windows-package\' + [Guid]::NewGuid().ToString('N'))
     $classes = Join-Path $buildRoot 'classes'
@@ -39,10 +39,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Creating TankOps.jar failed.' }
 
     Write-Host 'Creating Windows executable and bundled Java runtime...'
-    & (Join-Path $jdk 'bin\jpackage.exe') --type app-image --name TankOps `
-        --input $inputDir --main-jar TankOps.jar --main-class tankops.client.Main `
-        --dest $imageDir --app-version 1.0.0 --vendor TankOps --add-modules java.desktop
-    if ($LASTEXITCODE -ne 0) { throw 'Creating the Windows application failed.' }
+    $appRoot = Join-Path $imageDir 'TankOps'
+    $appDir = Join-Path $appRoot 'app'
+    New-Item -ItemType Directory -Path $appDir -Force | Out-Null
+    # Keep java.exe: the outer launcher starts it directly and captures JVM diagnostics.
+    # jpackage's default runtime strips these commands and its native launcher only
+    # reports the generic "Failed to launch JVM" on affected machines.
+    & (Join-Path $jdk 'bin\jlink.exe') --module-path (Join-Path $jdk 'jmods') `
+        --add-modules java.desktop --strip-debug --no-header-files --no-man-pages `
+        --output (Join-Path $appRoot 'runtime')
+    if ($LASTEXITCODE -ne 0) { throw 'Creating the bundled Java runtime failed.' }
+    Copy-Item -LiteralPath $jarPath -Destination (Join-Path $appDir 'TankOps.jar')
 
     Write-Host 'Embedding the game and Java runtime into one executable...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem

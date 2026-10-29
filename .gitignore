@@ -21,3 +21,4 @@ downloads/
 # Intermediate Windows build output
 dist/
 app-build.*/
+.tankops-cache/

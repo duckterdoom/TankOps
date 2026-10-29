@@ -12,6 +12,14 @@ hoặc Maven. Lần mở đầu tiên, game tự giải nén vào `%LOCALAPPDATA
 (có thể mất vài giây); các lần sau dùng lại dữ liệu đã giải nén.
 Mỗi bản build có bộ nhớ đệm riêng theo mã SHA-256 của nội dung game.
 
+Nếu máy Windows báo lỗi khởi động, bản launcher mới ghi chi tiết tại
+`%LOCALAPPDATA%\TankOps\logs`. Có thể chạy `./TankOps.exe --diagnose` trong PowerShell
+để kiểm tra Java đi kèm mà không mở game. Gửi file `.log` mới nhất khi cần chẩn đoán;
+không cần cài Java ngoài hoặc tắt Windows Security. Launcher Windows hiện dành cho x64.
+Nếu đường dẫn tài khoản Windows có dấu, launcher thử tên đường dẫn ngắn tương thích;
+nếu không có, dùng `.tankops-cache` cạnh EXE trong thư mục có đường dẫn không dấu và có quyền ghi.
+Trong trường hợp đó log nằm tại `.tankops-cache/logs`. Không cần xóa cache cũ thủ công.
+
 Chọn **ENTER GAME → Singleplayer** để chơi offline. Multiplayer cần server chạy riêng.
 
 Để chơi qua các mạng khác nhau bằng Ubuntu VM + Tailscale, dùng gói server
