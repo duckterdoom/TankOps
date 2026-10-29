@@ -1,245 +1,363 @@
-# BÁO CÁO PHÂN TÍCH HIỆN TRẠNG & KẾ HOẠCH HÀNH ĐỘNG HỆ THỐNG TANKOPS
-**Đối chiếu giữa Tài liệu Thiết kế Kiến trúc (Google Docs) và Hiện trạng Mã nguồn (Source Code)**
+# TankOps — Phân tích hệ thống và hướng dẫn triển khai
 
-*Cập nhật lần cuối: 26/10/2026 (phần Server: M2)*  
-*Dự án: TankOps - Multiplayer Real-time Tank Battle*  
-*Môi trường chuẩn: Java 21 (LTS), Maven Multi-module, Swing GUI, TCP Binary Protocol, SQLite JDBC*
+*Cập nhật: 29/10/2026. Đối chiếu với mã nguồn hiện tại; thay thế báo cáo tiến độ ngày 26/10 và các hướng dẫn triển khai rời rạc.*
 
----
+## 1. Phạm vi và trạng thái thực tế
 
-## 1. TỔNG QUAN HỆ THỐNG & ĐÁNH GIÁ TIẾN ĐỘ CHUNG
+TankOps là game xe tăng Java 21+, Swing, TCP binary, theo kiến trúc **server-authoritative**. Máy chủ quyết định vị trí thật, va chạm, đạn, sát thương, điểm và kết thúc trận. Client có nội suy và dự đoán **hình ảnh** có giới hạn để giảm cảm giác trễ.
 
-Theo tài liệu thiết kế, TankOps là hệ thống game bắn xe tăng nhiều người chơi thời gian thực theo kiến trúc **Server-Authoritative**. Hệ thống chia thành 4 module độc lập trong Maven:
-- `tankops-common`: Domain model, game engine, bản đồ và giao thức mạng nhị phân chung.
-- `tankops-server`: Server TCP, quản lý phiên kết nối, phòng chơi, vòng tick 30 Hz, database và replay.
-- `tankops-client`: Client đồ họa Swing, rendering nhiều lớp, xử lý phím bấm, bộ đệm nội suy mượt mà.
-- `tankops-tools`: Client bot không đầu (headless) và công cụ đo tải (benchmark).
+| Module | Hiện trạng |
+| --- | --- |
+| tankops-common | Model OOP, engine, bản đồ, AI cho offline, power-up, codec và writer mạng có giới hạn |
+| tankops-server | TCP acceptor/session, lobby/phòng thật, READY/START, tick mặc định 30 Hz, snapshot, điểm/kill/death và kết thúc/chơi lại |
+| tankops-client | Singleplayer và multiplayer Swing; tạo/vào/rời phòng, kết quả, đồ họa, âm thanh, nội suy, RTT và chẩn đoán khởi động |
+| database | Module MongoDB độc lập: MongoDatabaseManager, PlayerRepository, MatchRepository và test riêng |
+| tankops-tools | Có pom.xml; chưa có BotClient/BenchmarkRunner |
 
-### Bảng tóm tắt tiến độ các module
+Không dùng tỷ lệ hoàn thành ước lượng như bằng chứng nghiệm thu. Module database hiện dùng MongoDB, **không phải SQLite JDBC** như kế hoạch cũ. Server/client đang đóng gói không phụ thuộc module này; chưa nối lưu trận tự động vào GameRoom. Không coi saveMatch nhiều bước hiện tại là transaction ACID/rollback đã hoàn thành.
 
-| Module / Thành phần | Mức độ hoàn thành | Đánh giá hiện trạng                                                                                                                                                                                                                                                                                                           |
-| :--- | :---: |:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **`tankops-common`** | **~90%** | Đã hoàn thành hệ thống Model OOP/SOLID/Strategy, nạp Map động, GameEngine đã tích hợp trọn vẹn gameplay logic. **Đã tổ chức phân chia trọn vẹn package `common.net` thành các nhóm package con chuyên biệt (`codec/`, `lobby/`, `game/`, `system/`)**, vượt qua 100% TC01 và TC07.                                            |
-| **`tankops-server`** | **~70%** | Đã hoàn thành kiến trúc đa luồng (Acceptor, 1 thread/ClientSession, TickLoop theo `game.tickRate`, RoomManager, GameRoom). **Đã tích hợp MessageCodec** (snapshot nhị phân, nhận Input gồm cả lệnh bắn, Ping/Pong, RoomList, Chat). **Đã có luồng lobby phía server**: 3 phòng tạo sẵn, vào phòng `room-N`/`auto`/`new`, bắt đầu ván (tạm qua chat `/start`), cộng điểm khi hạ xe. 36/36 tests passed (cần xác nhận lại bằng Maven). Chưa có Database (JDBC) và Replay.                      |
-| **`tankops-client`** | **~80%** | Đã dựng đầy đủ bộ giao diện Swing (CardLayout với 5 Panel), Renderer đa lớp, SpriteManager, chế độ Singleplayer offline. **Đã hoàn thiện NetworkClient socket TCP (singleton, thread-safe, receiver thread), MessageListener, GameStateStore, InterpolationBuffer**, 10/10 tests passed. Chưa nối phòng động trên LobbyPanel. |
-| **`tankops-tools`** | **0%** | Mới có file `pom.xml`, chưa có mã nguồn BotClient và BenchmarkRunner. |
-| **Docs & Protocol** | **100%** | **Đã hoàn thành `docs/protocol.md`** (đặc tả binary format) và **`docs/NETWORK_DESIGN.md`** (sơ đồ Mermaid + pseudo-code toàn diện). Thư mục `database_test/` và `deploy/` chưa khởi tạo. |
+Tài liệu còn lại:
+- [README](README.md): cách mở game nhanh.
+- Tài liệu này: hiện trạng, triển khai, build, kiểm chứng và việc còn lại.
+- [Giao thức binary](docs/protocol.md): ID và thứ tự trường trên đường truyền.
 
----
+## 2. Kiến trúc và luồng chạy
 
-## 2. HIỆN TRẠNG CHI TIẾT TỪNG MODULE
+~~~mermaid
+flowchart LR
+    Input[Phím và chuột] --> Controller[MultiplayerController]
+    Controller --> CW[Writer nền client]
+    CW --> TCP[TCP trực tiếp hoặc Pinggy/Tailscale]
+    TCP --> Session[ClientSession]
+    Session --> Queue[Hàng đợi input của phòng]
+    Queue --> Tick[TickLoop 30 Hz và GameEngine]
+    Tick --> SW[Writer riêng từng session]
+    SW --> TCP
+    TCP --> State[NetworkClient và GameStateStore]
+    State --> Render[RenderInterpolator và LocalTankPreview]
+    Render --> Swing[GamePanel render khoảng 60 FPS]
+~~~
 
-### 2.1. Module `tankops-common`
+- ConnectionAcceptor nhận socket; mỗi ClientSession có luồng đọc riêng và bật TCP_NODELAY.
+- Luồng nhận chỉ xếp input; TickLoop là bên cập nhật engine trong trận.
+- MessageWriter giữ thứ tự, queue tối đa 32 bản tin/kết nối; ghi mạng không chặn EDT hoặc tick.
+- Queue đầy thì đóng kết nối đó, không âm thầm bỏ START/GAME OVER/âm thanh hoặc tích lũy vô hạn. Client nhận quá chậm vẫn có thể bị ngắt.
+- GameStateStore lưu snapshot authoritative; render không sửa dữ liệu server.
+- GamePanel không dựng lại bản đồ khi dữ liệu không đổi; panel sảnh/phòng ẩn không dựng lại danh sách ở mỗi snapshot.
 
-#### A. Những gì ĐÃ HOÀN THÀNH
-1. **Mô hình Hướng đối tượng (OOP & SOLID)**:
-    - **`model.common`**:
-        - `Entity`: Lớp cơ sở trừu tượng có `id`, tọa độ `Vector2D position`, `width/height`, thuật toán va chạm AABB `intersects(Entity)`.
-        - `Vector2D`: Record biểu diễn vector 2 chiều với các hàm tiện ích (`add`, `multiply`).
-        - `Direction`: Enum hướng (`UP`, `DOWN`, `LEFT`, `RIGHT`) chuyển đổi vector dịch chuyển `dx, dy`.
-        - `Bullet`: Đại diện đạn bay với vận tốc `Bullet.SPEED_SLOW` / `SPEED_FAST`, cấp độ xuyên phá `starLevel` và người bắn `ownerId`.
-    - **`model.tank`**:
-        - `Tank`: Lớp cha trừu tượng quản lý tốc độ, máu (`health`, `maxHealth`), di chuyển `move()`, bắn `fire()`, và cơ chế trượt băng `slideForward(deltaTime)`.
-        - `PlayerTank`: Hỗ trợ nâng cấp sao (`starLevel`), số mạng (`lives`), khiên vô địch (`shielded`), đếm điểm và tự cộng mạng.
-        - `EnemyTank`: Lớp cha xe địch, phân nhánh thành 4 lớp cụ thể: `BasicTank`, `FastTank`, `PowerTank`, `ArmorTank`.
-        - `state.BotState`: Đã áp dụng triệt để State Pattern cho AI Bot qua các lớp Singleton: `PatrolState`, `ChaseState`, `AttackState`.
-    - **`model.environment`**:
-        - `Environment`: Lớp cha với hợp đồng trừu tượng `canTankPass()`, `canBulletPass()`, `takeHit(starLevel)`.
-        - Các lớp con đa hình: `BrickWall` (bị phá hủy bởi đạn), `SteelWall` (chỉ đạn cấp sao cao mới xuyên được), `Water` (xe không đi qua được, đạn bay qua được), `Trees` (xe và đạn đi qua được), `Ice` (gây hiệu ứng trượt).
-    - **`model.powerups`**:
-        - `PowerUp`: Lớp cha đóng gói mẫu Strategy qua hàm `applyEffect(PlayerTank)`.
-        - Đã triển khai đủ 6 lớp vật phẩm: `Star`, `Helmet`, `Grenade`, `Shovel`, `Timer`, `TankPowerUp`.
-2. **Hệ thống Bản đồ (`common.map`)**:
-    - `GameMap`: Lưu trữ đối tượng môi trường, điểm spawn người chơi (`playerSpawnPoints`) và địch (`enemySpawnPoints`) và vật phẩm (`powerUpSpawnPoints`).
-    - `MapLoader`: Đọc và phân tích file bản đồ text dạng ma trận (`map_single.map`, `map_multi.map`).
-3. **Bộ máy trò chơi (`common.engine`)**:
-    - `GameState`: Nơi lưu trữ danh sách xe tăng, đạn, địa hình, vật phẩm và trạng thái kết thúc trận `isGameOver`.
-    - `GameEngine`: Nạp môi trường, `spawnPlayers()`, `spawnBots()`, nhận di chuyển `handleMoveEvent()`, kiểm tra va chạm tường và rollback (TC02), tích hợp thành công cơ chế quán tính trượt băng (Ice Slide) mượt mà cho cả khi giữ phím và thả phím. Đã hoàn thiện logic bắn đạn `handleShootEvent()`, tính toán tọa độ đạn bay `updateBullets()`, xử lý va chạm chính xác giữa Đạn - Tường (trừ độ bền môi trường TC03, TC04) và Đạn - Xe Tăng (trừ máu/mạng TC01). Đã có `onKillCallback()` để báo sự kiện hạ gục về cho Server tính điểm. Tự động kiểm tra điều kiện kết thúc trận `checkGameOverCondition()`.Tích hợp Bot logic tính toán khoảng cách tự động để đổi trạng thái Bot `updateBots()`.Tích hợp bộ đếm thời gian `powerUpSpawnTimer` và khoảng thời gian sinh vật phẩm định kỳ (`SPAWN_INTERVAL_TICKS`). Sinh ngẫu nhiên 6 loại vật phẩm (Grenade, Helmet, Shovel, Star, TankPowerUp, Timer) tại các điểm spawn của bản đồ. Tích hợp phương thức `checkPowerUpCollisions()` xử lý va chạm và kích hoạt hiệu ứng qua Strategy Pattern (`powerUp.applyEffect(playerTank, this.gameState)`).
-4. **Giao thức mạng hoàn chỉnh (`common.net`) - Phân chia theo Package khoa học**:
-    - **`tankops.common.net.Message`**: Hợp đồng gốc chuẩn cho toàn bộ bản tin mạng (`byte getTypeId()`).
-    - **`tankops.common.net.codec`**:
-        - `MessageCodec`: Bộ mã hóa/giải mã nhị phân có tiền tố độ dài `[length: 4 bytes Big-Endian][typeId: 1 byte][payload]`. Có cơ chế kiểm soát `MAX_MESSAGE_SIZE = 1MB` phòng vệ DoS.
-        - `ProtocolException`: Ngoại lệ ném ra khi gặp gói tin sai định dạng hoặc dữ liệu rác.
-    - **`tankops.common.net.lobby`**:
-        - `JoinRoomMessage` (`0x01`), `JoinResponseMessage` (`0x02`), `LeaveRoomMessage` (`0x03`).
-        - `RoomListRequestMessage` (`0x04`), `RoomListResponseMessage` (`0x05`), `RoomInfo` record.
-    - **`tankops.common.net.game`**:
-        - `InputMessage` (`0x06`) truyền phím bấm, hướng `Direction` (hỗ trợ `null` khi đứng yên), cờ bắn `shooting`.
-        - `SnapshotMessage` (`0x07`) truyền trạng thái xe `TankSnapshot`, đạn `BulletSnapshot`, cờ game over, winner.
-        - `GameOverMessage` (`0x08`) truyền `winnerId` và bảng điểm tổng kết.
-        - `EventMessage` (`0x09`) truyền sự kiện rời rạc (nổ xe, trúng đạn, nhặt đồ).
-    - **`tankops.common.net.system`**:
-        - `ChatMessage` (`0x0A`) chat trong phòng.
-        - `PingMessage` (`0x0B`) & `PongMessage` (`0x0C`) đo RTT latency và duy trì kết nối (Heartbeat).
-        - `DisconnectMessage` (`0x0D`) ngắt kết nối an toàn kèm lý do.
-    - **Kiểm thử `common.net` (47/47 tests passed)**:
-        - `MessageCodecTest`: 30 tests (Round-Trip toàn diện TC06, Malformed Message Rejection TC07, Stream I/O).
-        - `LobbyMessageRoundTripTest`: 5 tests chuyên sâu cho nhóm sảnh/phòng.
-        - `GameMessageRoundTripTest`: 5 tests chuyên sâu cho nhóm gameplay.
+### Gameplay và phòng
 
----
+Model gồm Entity/Vector2D/Direction/Bullet; Tank/PlayerTank và bốn loại EnemyTank. Địa hình gồm gạch, thép, nước, cây và băng. Power-up gồm Star, Helmet, Grenade, Shovel, Timer và TankPowerUp; AI offline dùng Patrol/Chase/Attack.
 
-### 2.2. Module `tankops-server`
+MapLoader nạp map_single.map và map_multi.map từ resources. Multiplayer dùng người chơi thật, không tự chèn bot.
 
-#### A. Những gì ĐÃ HOÀN THÀNH
-1. **Kiến trúc mạng & Đa luồng (Server Concurrency)**:
-    - `GameServer`: Mở `ServerSocket`, đọc `config.properties`, quản lý danh sách `ClientSession` an toàn với `synchronized`.
-    - `ConnectionAcceptor`: Luồng riêng chấp nhận kết nối TCP từ client và chuyển giao cho `ClientSession`.
-    - `ClientSession`: Mỗi client kết nối chạy trên một `Thread` độc lập, cấu hình `socket.setTcpNoDelay(true)`.
-        - Tích hợp `MessageCodec.readMessage(in)` để đọc các Message nhị phân, gửi qua `send(Message)` đồng bộ thread-safe.
-        - Tự động điều phối: gia nhập phòng (`JoinRoomMessage` $\rightarrow$ `JoinResponseMessage`), rời phòng (`LeaveRoomMessage`), lấy danh sách phòng (`RoomListRequestMessage` $\rightarrow$ `RoomListResponseMessage`), cập nhật lệnh di chuyển và bắn (`InputMessage`), phản hồi Ping/Pong và Chat. Bắt đầu ván hiện dùng tạm lệnh chat `/start` (chờ `StartGameMessage` trong protocol). `cleanup()` chỉ chạy một lần.
-        - Đảm bảo tương thích hoàn toàn với session giả lập `ClientSession(null, null)` trong unit tests.
-2. **Quản lý phòng & Vòng lặp trận đấu**:
-    - `RoomManager`: Tạo phòng, hủy phòng, cho client vào/rời phòng, hỗ trợ `getRoom(roomId)`, khống chế số người tối đa mỗi phòng (`room.maxPlayers`) và số phòng (`server.maxRooms`).
-        - **Phòng tạo sẵn**: khi mở server có sẵn `server.defaultRooms` (=3) phòng chờ; luôn giữ tối thiểu số phòng `LOBBY` này (không vượt `maxRooms`).
-        - **`joinOrCreate(roomId, player)`** chạy trong một khối `synchronized`: `room-N` = vào đúng phòng (không tồn tại thì từ chối, không tự tạo), `auto` = phòng chờ còn chỗ, `new` = tạo phòng mới rồi vào. Tìm phòng và thêm người là một thao tác nguyên tử nên không còn "phòng ma" bị xóa chen giữa.
-        - Từ chối người đã ở trong phòng khác. **`startGame(roomId, requester, map, tickRate)`**: chỉ thành viên phòng được bắt đầu, cần tối thiểu 2 người; sau đó tự bổ sung phòng chờ mới.
-    - `GameRoom`:
-        - Quản lý trạng thái phòng bằng Enum `RoomState` (`LOBBY` $\rightarrow$ `PLAYING` $\rightarrow$ `FINISHED`).
-        - Áp dụng nguyên tắc **Single-Writer**: Luồng mạng client chỉ nạp lệnh vào `ConcurrentLinkedQueue<InputCommand>` (di chuyển hoặc bắn). Chỉ duy nhất luồng `TickLoop` được phép gọi cập nhật `GameEngine`.
-        - `TickLoop`: Vòng lặp tính toán cố định theo `game.tickRate` (mặc định 30 tick/giây, `ScheduledExecutorService`).
-        - Nối lệnh bắn vào `engine.handleShootEvent` trong tick thread; nối callback hạ xe của engine vào `addKill` (+100 điểm).
-        - **Tích hợp Snapshot nhị phân**: Tại mỗi tick gọi `buildBinarySnapshot()` và `broadcast(SnapshotMessage)` gửi tới mọi người chơi; kết thúc trận broadcast `GameOverMessage`.
-        - Tính điểm (`scores`, `addKill`), kiểm tra kết thúc trận (`isGameOver`) và tìm người thắng (`findWinner`).
-3. **Kiểm thử tự động Concurrency (36/36 tests passed)**:
-    - `RoomLifecycleTest`: Vòng đời phòng LOBBY $\rightarrow$ PLAYING $\rightarrow$ FINISHED.
-    - `RoomManagerTest`: Đạt **TC09** (từ chối người thứ 6 khi phòng 5 chỗ đã đầy) và **TC10** (50 thread đồng thời vào phòng 1 chỗ, bảo đảm chỉ đúng 1 người thành công).
-    - `GameRoomTickTest`: Kiểm tra tick rate ổn định và chịu bão lệnh từ nhiều thread.
-    - `RoomManagerLobbyTest` (12 test): phòng tạo sẵn, `auto`/`new`/phòng không tồn tại, giới hạn `maxRooms`, đã ở phòng khác, quyền START, 50 thread `auto` không vượt sức chứa, vào/ra liên tục không để phòng ma.
-    - `ServerEndToEndTest`: server thật + client giả qua `MessageCodec`: xem 3 phòng, vào `room-1` và `auto`, `/start`, nhận snapshot, gửi input bắn.
-    - `ServerStressTest`: Chạy 20 luồng giả lập tạo, vào, thoát phòng liên tục không bị deadlock; stress test kết nối/ngắt socket dọn sạch session.
+Luồng multiplayer:
+1. Đăng nhập bằng tên và địa chỉ host:port.
+2. Client xin danh sách phòng, tạo phòng bằng roomId=new hoặc vào phòng cụ thể/auto.
+3. Server từ chối phòng đầy, tên trùng và trạng thái không phù hợp; RoomStateMessage gửi danh sách người/host/READY.
+4. Tối thiểu 2 người; thành viên READY, host START.
+5. READY/UNREADY và /start hiện truyền bằng ChatMessage, chưa có StartGameMessage riêng.
+6. Server gửi snapshot liên tục, rồi GameOverMessage với điểm/kill/death.
+7. Rời phòng/kết quả xóa trạng thái cũ; có cơ chế đưa phòng FINISHED về LOBBY để chơi lại.
 
----
+## 3. Tối ưu multiplayer đã có
 
-### 2.3. Module `tankops-client`
+| Thay đổi | Cơ chế và giới hạn |
+| --- | --- |
+| Gửi input sớm | Gửi ngay khi phím thay đổi; giữ bắn khoảng 30 Hz, trạng thái không đổi gửi lại khoảng 100 ms |
+| Render đều | Timer 16 ms độc lập với nhịp nhận gói |
+| Nội suy từ xa | RenderInterpolator giữ tối đa 12 frame, đệm 66 ms, dùng nanoTime; tránh blend qua đổi hướng/respawn/dịch chuyển lớn |
+| Phản hồi xe mình | LocalTankPreview theo input, giới hạn lệch 12 px; dùng tốc độ player mặc định ở server 30 Hz |
+| Bảo toàn gameplay | Preview kiểm tra AABB, tường/nước/biên; không dự đoán quán tính băng; không sửa vị trí authoritative hoặc kết quả bắn |
+| Mạng ngừng cập nhật | Không tiến preview thêm sau 250 ms thiếu snapshot; hiển thị cảnh báo |
+| Đo thực tế | Ping/Pong mỗi giây, RTT ở góc màn chơi; bao gồm chờ queue và xử lý ứng dụng |
+| Nhả phím | Xóa trạng thái khi mất focus/dừng ván để tránh kẹt di chuyển/bắn |
+| Âm thanh | Queue hữu hạn 24 tác vụ, hai worker; giới hạn âm trượt lặp lại, đóng stream và hạn chế log lỗi lặp |
 
-#### A. Những gì ĐÃ HOÀN THÀNH
-1. **Giao diện người dùng (Swing GUI)**:
-    - `MainFrame`: Kích thước $1024 \times 768$, chuyển cảnh mượt mà bằng `CardLayout`.
-    - Đầy đủ 5 màn hình: `LoginPanel`, `ModeSelectPanel`, `LobbyPanel`, `GamePanel`, `ResultPanel`, `HudPanel`.
-2. **Đồ họa & Rendering (`ui.render`)**:
-    - `SpriteManager`: Tự động cắt các khung hình sprite sheet Battle City gốc.
-    - `GameRenderer`: Vẽ đồ họa đa tầng (Băng, Nước hoạt ảnh 2 frame, Gạch, Thép, Xe tăng kèm thanh máu, Đạn, Cây cối che phủ).
-3. **Chơi đơn Offline (Singleplayer)**:
-    - `SinglePlayerController` & `InputHandler`: Chơi offline mượt mà, di chuyển xe né tường (TC17).
-4. **Mạng & Trạng thái Client (`client.net`, `client.state`)**:
-    - **`NetworkClient`**: Singleton, thread-safe, kết nối TCP Socket thực tế với timeout 5s, `setTcpNoDelay(true)`, chạy luồng daemon `NetworkClient-Receiver` liên tục nhận và giải mã Message, phương thức `sendMessage(Message)` an toàn đa luồng, hỗ trợ Ping/Pong tự động.
-    - **`MessageListener`**: Interface nhận sự kiện bản tin đến, kết nối (`onConnected`) và mất kết nối (`onDisconnected`).
-    - **`GameStateStore`**: Model MVC lắng nghe `SnapshotMessage`, `GameOverMessage`, `JoinResponseMessage` từ server để cập nhật trạng thái hiển thị an toàn bằng `AtomicReference`.
-    - **`InterpolationBuffer`**: Bộ đệm nội suy tuyến tính (LERP) làm mượt vị trí xe từ xa giữa 2 snapshot liên tiếp, loại bỏ hiện tượng giật giật (jitter).
-5. **Kiểm thử tự động Client (10/10 tests passed)**:
-    - `NetworkClientTest`: Kiểm thử kết nối TCP thật, gửi `InputMessage` và nhận `JoinResponseMessage` qua loopback socket (TC08).
-    - `GameStateStoreTest`: Kiểm thử chuyển đổi trạng thái khi nhận bản tin mạng.
-    - `InterpolationBufferTest`: Kiểm thử công thức LERP, độ mượt nội suy và giới hạn dung lượng hàng đợi snapshot.
+Preview là phản hồi hiển thị có giới hạn, **chưa phải prediction/reconciliation đầy đủ với sequence ACK**. Có thể thấy chỉnh vị trí nhỏ khi server xác nhận. Nếu đổi tick rate khỏi 30, cần đánh giá lại preview và mô phỏng; engine hiện di chuyển theo bước mỗi tick nên tăng tick có thể đổi tốc độ gameplay.
 
----
-### 2.5. Module `database` (Mới cập nhật - Độc lập)
-- **Cấu trúc module riêng biệt**: Tách hoàn toàn khỏi `tankops-server`, khai báo thành một Maven Module độc lập (`database`) trong `pom.xml` gốc, có phân tách rõ ràng hai thư mục `src/main/java` và `src/test/java`.
-- **Cơ chế khởi tạo CSDL tự động**: Sử dụng kịch bản `schema.sql` kết hợp class quản lý kết nối (`Database.java` / `MongoDatabaseManager.java`) để tự động khởi tạo bảng/collection ngay khi khởi chạy chương trình hoặc chạy test.
-- **PlayerRepository & Transaction**: 
-  - Triển khai đầy đủ các thao tác CRUD cho người chơi sử dụng `PreparedStatement` đảm bảo an toàn bảo mật và chống SQL Injection.
-  - Xây dựng các bài kiểm thử tự động (`PlayerRepositoryTest`) đặt trong thư mục `test` để kiểm tra tính năng mà không ảnh hưởng đến mã nguồn chạy chính thức của các thành viên khác trong nhóm.
-## 3. MA TRẬN ĐỐI CHIẾU TEST CASES (THEO MỤC 11 GOOGLE DOCS)
+Hai đợt kiểm tra Ping/Pong qua Pinggy trong phiên hỗ trợ có RTT trung vị khoảng 103–112 ms, đỉnh khoảng 183–193 ms, mỗi đợt chỉ 12 mẫu. Đây không phải benchmark hay RTT của mọi người chơi. Code không loại bỏ được độ trễ relay; nội suy tăng độ mượt nhưng thêm thời gian đệm cho vật thể từ xa.
 
-| Mã TC | Tên Test Case | Mô tả kiểm thử | Hiện trạng trong Code                                                               | Trạng thái |
-| :---: | :--- | :--- |:------------------------------------------------------------------------------------| :---: |
-| **TC01** | Bullet hits tank | Đạn trúng xe: Xe mất máu, đạn biến mất | Đã có trong `GameEngineTest` (`testTC01_BulletHitsEnemy`)                           | 🟢 Đạt |
-| **TC02** | Tank hits wall | Xe đụng tường cản: Xe dừng lại, rollback vị trí | Đã có trong `GameEngineTest` (`testTC02_TankCollidesWithWallAndRollsBack`)          | 🟢 Đạt |
-| **TC03** | Bullet destroys brick wall | Đạn phá tường gạch: Tường bị vỡ/biến mất | Đã có trong `GameEngineTest` (`testTC03_BulletCollidesWithObstacleWallAndRemoves`)  | 🟢 Đạt |
-| **TC04** | Bullet hits steel wall | Đạn đụng tường thép: Tường giữ nguyên, đạn vỡ | Đã có trong `GameEngineTest` (`testTC04_BulletPassesThroughPassableEnvironment`)  | 🟢 Đạt |
-| **TC05** | Tank death & respawn | Máu = 0: Tính mạng/kill, hồi sinh sau thời gian trễ | CĐã có trong `GameEngineTest` (`testTC05_PlayerTankRespawnsWhenLivesRemain `) | 🟢 Đạt |
-| **TC06** | Protocol round trip | Mã hóa rồi giải mã các loại Message: Giữ nguyên dữ liệu | **Đã hoàn thành 100% trong `MessageCodecTest` & các sub-suites (30 tests)**         | 🟢 Đạt |
-| **TC07** | Malformed message | Gửi byte rác/bị lỗi: Server từ chối không crash | **Đã hoàn thành 100% trong `MessageCodecTest` (8 tests fuzzing/chống DoS)**         | 🟢 Đạt |
-| **TC08** | Join room | Gửi JOIN_ROOM: Xuất hiện trong danh sách phòng | **Đã hoàn thành trong `NetworkClientTest` & `ServerEndToEndTest` (socket thật)**       | 🟢 Đạt |
-| **TC09** | Room full | Người thứ 6 vào phòng 5 chỗ: Báo lỗi từ chối | Đã có trong `RoomManagerTest` (`tc09_roomFull_sixthPlayerRefused`)                  | 🟢 Đạt |
-| **TC10** | Concurrent join race | 50 người cùng tranh 1 chỗ: Duy nhất 1 người thành công | Đã có trong `RoomManagerTest` (`tc10_concurrentJoin_exactlyOneSucceeds`)            | 🟢 Đạt |
-| **TC11** | Disconnect mid-game | Giết tiến trình client: Trận đấu vẫn tiếp diễn, xóa xe client | Đã có dọn dẹp an toàn ở `ClientSession.cleanup`                                     | 🟡 Cần viết integration test |
-| **TC12** | Client consistency | Nhiều client cùng chơi nhìn thấy một trạng thái thế giới | Chờ nối giao diện Multiplayer UI                                                    | 🔴 Chưa đạt |
-| **TC13** | Save match result | Trận đấu xong: Lưu các bản ghi match & players trong 1 transaction | Chờ Database module (`MatchRepository`)                                             | 🔴 Chưa đạt |
-| **TC14** | Transaction rollback | Cố tình lỗi khi lưu kết quả: Không lưu dữ liệu rác | Chờ Database module (`MatchRepository`)                                             | 🔴 Chưa đạt |
-| **TC15** | Leaderboard query | Đọc top N người chơi theo điểm | Chờ Database module (`PlayerRepository`)                                            | 🔴 Chưa đạt |
-| **TC16** | Replay playback | Ghi trận đấu ra file nhị phân và đọc lại phát lại | Chờ Replay module (`ReplayRecorder`/`Player`)                                       | 🔴 Chưa đạt |
-| **TC17** | GUI key input | Nhấn phím WASD/bắn: Xe phản hồi ngay, không giật lag | Đã test thực tế trên Singleplayer GUI                                               | 🟢 Đạt |
+## 4. Gói phát hành và yêu cầu Java
 
----
+| Gói | Java ngoài trên máy nhận | Build bằng |
+| --- | --- | --- |
+| TankOps.exe | Không; Windows x64 và .NET Framework của Windows | Build-TankOps.ps1 trên Windows |
+| TankOps-Mac.zip: JAR + .command | **Có**, Java 21+ đúng chip | Build-Mac.ps1 trên Windows |
+| ZIP chứa TankOps.app | Không; đúng kiến trúc Mac/JDK | Build-Mac-Native.sh trên macOS |
+| TankOps-Ubuntu.zip | **Có**, Java 21+ hoặc cài qua setup | Build-Server.ps1 trên Windows |
+| TankOps-Ubuntu-<arch>.tar.gz | Không; Linux/CPU/thư viện hệ điều hành tương thích | Build-Server-Native.sh trên Linux |
 
-## 4. TỔNG KẾT KẾT QUẢ BUILD & TEST TOÀN DỰ ÁN
+Java Windows không chạy trên Mac/Linux. Máy build cần JDK đầy đủ; máy nhận gói tự chứa không cần JDK/JRE ngoài. Mac Intel và Apple Silicon cần bản native riêng. App Mac hiện chưa ký Developer ID/notarize.
 
-```
-[INFO] Reactor Summary for tankops-parent 1.0-SNAPSHOT:
-[INFO] tankops-parent ..................................... SUCCESS [  0.002 s]
-[INFO] tankops-common ..................................... SUCCESS [  1.382 s]  (47/47 tests passed)
-[INFO] tankops-server ..................................... SUCCESS [  5.509 s]  (36/36 tests passed)
-[INFO] tankops-client ..................................... SUCCESS [  1.335 s]  (10/10 tests passed)
-[INFO] tankops-tools ...................................... SUCCESS [  0.013 s]
-[INFO] ------------------------------------------------------------------------
-[INFO] BUILD SUCCESS (Tổng cộng 93/93 tests PASSED, 0 FAILURES, 0 ERRORS)
-```
+Máy nhận đã cài Java/JDK khác phiên bản vẫn dùng runtime của gói EXE/.app; không cần đổi Java hệ thống. Riêng gói JAR TankOps-Mac.zip dùng Java ngoài nên cần Java 21+. Launcher Windows loại bỏ các tùy chọn JVM từ môi trường ứng dụng khác trước khi khởi động.
 
----
+### Build trên Windows
 
-## 5. PHƯƠNG ÁN & KẾ HOẠCH HÀNH ĐỘNG TIẾP THEO CHO CÁC ROLE
+Đóng EXE đang dùng trước khi ghi đè. Tại thư mục repo:
 
-Dưới đây là kế hoạch chi tiết, rõ ràng về mặt kiến trúc và phân công kỹ thuật cho các thành viên trong nhóm theo từng vai trò:
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-TankOps.ps1 -JdkHome "C:\duong-dan\jdk-21"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Server.ps1 -JdkHome "C:\duong-dan\jdk-21"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Mac.ps1 -JdkHome "C:\duong-dan\jdk-21"
+~~~
 
-### 🎮 Role 1: Server Developer (`tankops-server`)
-**Trách nhiệm chính:** Vòng lặp game (TickLoop), quản lý phòng, phiên client, xử lý đồng thời.
+Find-Jdk.ps1 tìm JDK qua tham số, JAVA_HOME, PATH và thư mục cài phổ biến. Build chỉ lấy production source common + client/server tương ứng, không cần database/Maven để tạo các gói này.
 
-* **Nhiệm vụ 1: Nối lệnh Bắn (`shooting`) từ InputMessage vào GameRoom**: ✅ **Đã xong.** `ClientSession.handleInput` gọi thêm `room.submitShoot(playerId)`; hàng đợi dùng `InputCommand(playerId, direction, shoot)`; trong `tick()` gọi `engine.handleShootEvent`. Callback hạ xe nối vào `addKill`.
-* **Nhiệm vụ 2: Cơ chế phòng chơi hoàn chỉnh**: 🟡 **Phần server đã xong, còn phụ thuộc đồng đội.**
-    - ✅ Phòng tạo sẵn, `joinOrCreate` (`auto`/`new`), START (từ 2 người), nạp map từ `game.multiMap` (`map_multi.map`), đọc `game.tickRate`, dọn phòng khi rỗng.
-    - ⏳ Chờ **M1**: thêm `StartGameMessage` (và `CreateRoomMessage` nếu cần) vào protocol, thay lệnh chat `/start` tạm thời. Chờ **M4**: nối `LobbyPanel` (danh sách phòng, `RoomListRequest` định kỳ, Tạo phòng/Vào/Start/Rời).
-    - Chưa làm: chọn map theo phòng, phòng `FINISHED` chưa tự quay về `LOBBY`, server chưa gửi danh sách tên người trong phòng.
-    - Không chèn bot trong multiplayer (quyết định của nhóm).
-* **Nhiệm vụ 3: Tích hợp bất đồng bộ với Database & Replay**:
-    - Khi trận kết thúc (`GameRoom.finishGame()`), tạo một tác vụ nền (`CompletableFuture`) gửi bảng điểm sang `MatchRepository` để lưu vào SQLite mà không làm giật lag vòng tick của các phòng khác.
+Windows dùng jdeps xác định module, jlink tạo runtime và bổ sung jdk.accessibility vì phụ thuộc động này không được suy ra từ import. Launcher C# tự giải nén theo hash vào cache rồi gọi Java đi kèm.
 
----
+### MacBook
 
-### ⚙️ Role 2: Game Engine Developer (`tankops-common/engine`, `common/model`)
-**Trách nhiệm chính:** Thực thể, vật lý, phát hiện va chạm, AI bots, powerups.
+Để tạo bản **không cần Java trên máy người chơi**, chạy trên Mac của nhóm có JDK 21+ đúng chip:
 
+~~~bash
+bash Build-Mac-Native.sh
+~~~
 
----
+Script biên dịch source, tạo runtime bằng jdeps/jlink, đóng gói bằng jpackage và chạy chính launcher .app với --self-test khi bỏ Java ngoài khỏi môi trường. Gói kết quả TankOps-Mac-aarch64.zip hoặc TankOps-Mac-x86_64.zip chứa TankOps.app; người nhận giải nén và mở app.
 
-### 🖥️ Role 3: Client Developer (`tankops-client`)
-**Trách nhiệm chính:** Giao diện Swing GUI, rendering nhiều lớp, xử lý phím bấm, đồng bộ trạng thái.
+Nếu chỉ có TankOps-Mac.zip:
 
-* **Nhiệm vụ 1: Nối mạng động cho màn hình Sảnh (`LobbyPanel`)**:
-    - `LobbyPanel` đăng ký làm `MessageListener` với `NetworkClient`.
-    - Khi chuyển vào màn hình sảnh: Gửi `RoomListRequestMessage`, nhận `RoomListResponseMessage` để hiển thị danh sách phòng thật từ Server lên JTable / JList.
-    - Thêm nút "Tạo phòng" (gửi `JoinRoomMessage` với `roomId="auto"` hoặc tên mới).
-    - Khi nhận `JoinResponseMessage(success=true)`: Hiển thị danh sách người chơi trong phòng và nút "Sẵn sàng / Bắt đầu".
-* **Nhiệm vụ 2: Nối Game Loop Multiplayer trong `GamePanel`**:
-    - Khi trận đấu bắt đầu: Chuyển màn hình sang `GamePanel` ở chế độ Multiplayer.
-    - Vòng lặp render của Client (Swing Timer 60 FPS) đọc dữ liệu xe và đạn từ `GameStateStore.getLatestSnapshot()` và vị trí mịn từ `InterpolationBuffer`.
-    - `InputHandler` khi người chơi nhấn phím WASD / J: Đóng gói thành `InputMessage` và gọi `NetworkClient.getInstance().sendMessage(msg)` gửi về Server (chế độ Server-Authoritative, client không tự ý cập nhật vị trí).
-* **Nhiệm vụ 3: Màn hình Kết quả (`ResultPanel`)**:
-    - Lắng nghe `GameOverMessage` từ `GameStateStore`: Dừng nhận phím, chuyển cảnh sang `ResultPanel` hiển thị Winner và danh sách điểm số nhận được từ Server.
-* **Nhiệm vụ 4: Hệ thống Âm thanh (Audio Clips)**:
-    - Tạo `SoundManager` phát hiệu ứng âm thanh bắn, nổ xe, nhặt đồ khi nhận `EventMessage`.
+Trên Mac đã có JDK 21+, giải nén gói rồi chạy `bash Build-TankOps-App.command` trong thư mục đó. Script kiểm tra chính launcher .app bằng runtime đi kèm và xuất thêm ZIP tên cố định ngay trong thư mục: TankOps-Mac-aarch64.zip hoặc TankOps-Mac-x86_64.zip. Gửi ZIP này cho người chưa cài Java. Người nhận giải nén và mở TankOps.app; không cần chạy script build. Bản JAR bạn đã thử thành công không thay thế bước thử .app tự chứa trên Mac đích.
+1. Cài [Temurin JDK 21 cho macOS](https://adoptium.net/temurin/releases/?version=21&os=mac): ARM64/aarch64 cho Apple Silicon, x64 cho Intel.
+2. Giải nén toàn bộ, giữ JAR và launcher cùng thư mục.
+3. Mở Start-TankOps.command. Nếu thiếu quyền chạy, dùng Terminal: chmod +x rồi kéo đường dẫn file vào.
+4. Muốn tạo .app từ JAR đã có, chạy bash rồi kéo Build-TankOps-App.command vào; phải dùng JAR mới nhất.
 
----
+Nếu macOS chặn file tải từ Internet, kiểm tra đúng nguồn rồi dùng Control-click → Open hoặc Privacy & Security → Open Anyway nếu hệ thống cho phép. Không tắt Gatekeeper toàn hệ thống. File bị báo hỏng/độc hại cần được kiểm tra lại.
 
-### 🗄️ Role 4: Database, Testing & Tools Developer (`persistence`, `tools`)
-**Trách nhiệm chính:** SQLite JDBC, Replay System, Benchmarking, CI/CD và Build Automation.
+### Ubuntu native
 
-* **Nhiệm vụ 1: Tích hợp Cơ sở dữ liệu SQLite (`tankops.server.persistence`)**:
-  - Viết file `database_test/schema.sql` gồm 3 bảng:
-    + `players` (`id`, `username`, `total_score`, `created_at`).
-    + `matches` (`id`, `start_time`, `end_time`, `winner_id`).
-    + `match_players` (`match_id`, `player_id`, `score`, `kills`).
-  - Triển khai `DatabaseConnection` quản lý kết nối SQLite qua JDBC (`tankops.db`).
-  - Triển khai `MatchRepository.saveMatchResult()` với **ACID Transaction** (`setAutoCommit(false)`, `commit()`, `rollback()` khi lỗi - đạt **TC13, TC14**).
-  - Triển khai `PlayerRepository.getLeaderboard(int topN)` đọc bảng xếp hạng (đạt **TC15**).
-* **Nhiệm vụ 2: Hệ thống Ghi & Phát lại Trận đấu (`Replay System`)**:
-    - `ReplayRecorder`: Lắng nghe từng `SnapshotMessage` từ `GameRoom`, ghi tuần tự ra file nhị phân `.rec` bằng `DataOutputStream` (đóng gói Binary I/O).
-    - `ReplayPlayer`: Đọc file `.rec`, phát lại từng snapshot theo đúng nhịp thời gian vào `GameStateStore` để `GameRenderer` hiển thị lại trận đấu (đạt **TC16**).
-* **Nhiệm vụ 3: Xây dựng Công cụ Đo tải (`tankops-tools`)**:
-    - `BotClient`: Client không đầu (headless), kết nối TCP tới server qua `NetworkClient`, tự động gửi `InputMessage` ngẫu nhiên.
-    - `BenchmarkRunner`: Khởi chạy 50 - 100 `BotClient` đồng thời để đo:
-        + CPU & RAM usage của Server.
-        + RTT Latency khi số lượng client tăng cao (phục vụ Thí nghiệm E1 trong tài liệu).
-* **Nhiệm vụ 4: Đóng gói & Triển khai (Deployment)**:
-    - Viết `Dockerfile` nhiều tầng (multi-stage build) để đóng gói `tankops-server` thành container gọn nhẹ.
-    - Viết script `run-server.sh` / `run-client.bat` phục vụ chạy thử nghiệm nghiệm thu nhanh.
+Trên Ubuntu có JDK 21+:
+
+~~~bash
+bash Build-Server-Native.sh
+~~~
+
+Chuyển tar.gz sang máy Ubuntu tương thích, giải nén giữ nguyên quyền executable:
+
+~~~bash
+tar -xzf TankOps-Ubuntu-amd64.tar.gz
+cd TankOps-Ubuntu
+./runtime/bin/java -jar tankops-server.jar --self-test
+./runtime/bin/java -Xms64m -Xmx512m -Dtankops.config=./config.properties -Dtankops.bindAddress=127.0.0.1 -jar tankops-server.jar
+~~~
+
+Launcher ưu tiên runtime đi kèm; nếu không có mới tìm Java hệ thống. --local bind localhost cho Pinggy; không truyền tùy chọn thì dùng Tailscale.
+
+## 5. Ubuntu VM và SSH từ Windows
+
+Cấu hình thử nghiệm: Ubuntu Server 24.04 LTS, 2 vCPU, 2 GB RAM, đĩa động 25 GB. Đây là cấu hình khởi đầu, chưa phải tải đã nghiệm thu.
+
+VirtualBox:
+- Adapter 1: NAT, bật Cable Connected.
+- Port Forwarding SSH: TCP; Host IP 127.0.0.1; Host Port 2222; Guest IP để trống; Guest Port 22.
+- Cài Ubuntu thủ công nếu Unattended Installation báo username dành riêng; dùng username tankops hoặc tên riêng hợp lệ, chọn Install OpenSSH server.
+
+Trong Ubuntu, nếu SSH chưa có:
+
+~~~bash
+sudo apt-get update
+sudo apt-get install -y openssh-server
+sudo systemctl enable --now ssh
+~~~
+
+Trong **PowerShell Windows**, không phải trong phiên Ubuntu:
+
+~~~powershell
+ssh -p 2222 tankops@127.0.0.1
+scp -P 2222 .\TankOps-Ubuntu.zip tankops@127.0.0.1:~/
+~~~
+
+ssh dùng -p thường, scp dùng -P hoa. 127.0.0.1 là máy đang chạy lệnh: cổng 2222 chỉ nằm phía Windows. Đổi dây/router có thể đổi IP LAN Windows, nhưng SSH NAT 127.0.0.1:2222 vẫn như cũ khi VM đang chạy.
+
+## 6. Chơi khác mạng qua Pinggy
+
+Phương án đang dùng: người chơi chỉ mở client, không cài Tailscale, không cấu hình router. Máy chủ tạo kết nối TCP đi ra tới Pinggy.
+
+### Cài/cập nhật ZIP server
+
+Trong SSH Ubuntu:
+
+~~~bash
+sudo apt-get update
+sudo apt-get install -y unzip openjdk-21-jre-headless
+mkdir -p ~/TankOps
+unzip -o ~/TankOps-Ubuntu.zip -d ~/TankOps
+cd ~/TankOps
+java -Xms64m -Xmx512m -Dtankops.config=./config.properties -Dtankops.bindAddress=127.0.0.1 -jar tankops-server.jar
+~~~
+
+Chỉ mở Pinggy sau khi log xác nhận **127.0.0.1:5555**. Dùng lệnh Java trực tiếp phía trên để tránh script cũ bỏ qua --local và vẫn bind Tailscale. Nếu gói có Java đi kèm nhưng máy chưa cài Java, thay lệnh java bằng ./runtime/bin/java.
+
+Script start-server.sh mới có hỗ trợ --local, nhưng bản đã chép trên Ubuntu có thể chưa được cập nhật. Nếu log hiện Ubuntu Tailscale IP hoặc 100.x.x.x:5555: Ctrl+C, rồi mở lại bằng lệnh Java trực tiếp. Không cần gỡ Tailscale.
+
+Ở phiên SSH Ubuntu thứ hai, kiểm tra:
+
+~~~bash
+ss -ltnp 'sport = :5555'
+~~~
+
+Phải thấy LISTEN tại 127.0.0.1:5555. Giữ cửa sổ server mở; trong phiên SSH thứ hai chạy:
+
+~~~bash
+ssh -p 443 -R0:127.0.0.1:5555 tcp@free.pinggy.io
+~~~
+
+Pinggy hiển thị địa chỉ dạng tcp://ten-may.run.pinggy-free.link:12345. Người chơi nhập **ten-may.run.pinggy-free.link:12345**, bỏ tcp:// và giữ đúng cổng; không nhập 127.0.0.1 hoặc cổng 5555 của Ubuntu vào máy ở mạng khác.
+
+Phiên miễn phí hiện thông báo hết hạn sau 60 phút và cấp địa chỉ mới khi mở lại. Không lưu địa chỉ tạm của một phiên thành cấu hình cố định trong source. [Nguồn Pinggy](https://pinggy.io/help/).
+
+Giữ Windows, VM, server và Pinggy hoạt động. Đổi mạng hoặc máy ngủ có thể làm tunnel mất kết nối; chạy lại và gửi địa chỉ mới.
+
+### Cập nhật và tắt
+
+- Sửa chỉ client/launcher hoặc dự đoán hiển thị: cập nhật EXE/gói Mac, không bắt buộc thay server nếu wire format không đổi.
+- Sửa server: build ZIP, dừng Java bằng Ctrl+C, scp từ Windows, unzip -o và mở lại server.
+- Sửa giao thức common: cập nhật **cả server và mọi client**. Lobby tương thích không chứng minh snapshot trận đấu tương thích.
+- Pinggy còn sống thì không cần tạo lại chỉ vì restart Java.
+- Tắt gọn: Ctrl+C Pinggy, Ctrl+C server, rồi sudo poweroff.
+- Bật lại không cần build/unzip nếu source không đổi, nhưng tunnel miễn phí mở lại có địa chỉ mới.
+
+### Cấu hình server
+
+| Thuộc tính | Resources mặc định | Gói Ubuntu |
+| --- | ---: | ---: |
+| server.port | 5555 | 5555 |
+| server.maxClients | 100 | 16 |
+| room.maxPlayers | 5 | 5 |
+| server.maxRooms | 10 | 3 |
+| server.defaultRooms | 3 | 1 |
+| game.tickRate | 30 | 30 |
+
+game.multiMap=/maps/map_multi.map. Cấu hình ngoài qua -Dtankops.config; địa chỉ bind qua -Dtankops.bindAddress. Các giới hạn trên là cấu hình, không phải kết quả benchmark.
+
+## 7. Tailscale: phương án thay thế
+
+Nếu chấp nhận cài Tailscale trên mỗi máy:
+1. Trong thư mục server Ubuntu, chạy bash setup-ubuntu.sh để cài Java/Tailscale và đăng nhập.
+2. Lấy IP bằng tailscale ip -4; chạy bash start-server.sh không có --local.
+3. Máy người chơi cài Tailscale, cùng mạng Tailscale hoặc nhận quyền chia sẻ máy Ubuntu từ chủ server.
+4. Nhập địa chỉ Tailscale của Ubuntu và cổng 5555. Dùng tài khoản riêng, không chia sẻ mật khẩu.
+
+SSH qua NAT vẫn dùng được dù Windows chưa có Tailscale; SSH/game qua IP Tailscale thì Windows cũng phải kết nối Tailscale. IP Tailscale thường giữ nguyên khi đổi mạng LAN; kết nối đang chơi vẫn có thể gián đoạn.
+
+Kiểm tra:
+
+~~~powershell
+tailscale status
+tailscale ping <IP-TAILSCALE>
+Test-NetConnection <IP-TAILSCALE> -Port 5555
+~~~
+
+~~~bash
+tailscale status
+tailscale ip -4
+ss -ltnp 'sport = :5555'
+sudo ufw status
+~~~
+
+Chỉ nếu UFW đang chặn và cần luật, cho phép game trên giao diện Tailscale:
+
+~~~bash
+sudo ufw allow in on tailscale0 to any port 5555 proto tcp
+~~~
+
+[Linux install](https://tailscale.com/docs/install/linux), [chia sẻ game server](https://tailscale.com/docs/use-cases/personal-or-at-home-use/share-private-game-server). Kiểm tra điều khoản/gói hiện hành nếu dùng dịch vụ lâu dài.
+
+## 8. Kiểm chứng trước khi phát hành
+
+### Kiểm tra tự động
+
+Build Windows phải đạt trước khi xuất EXE:
+1. Biên dịch và kiểm tra module bằng jdeps.
+2. Dùng đúng runtime đóng gói với JAVA_HOME/Java ngoài bị loại khỏi môi trường.
+3. Đọc map, giải mã ảnh/âm thanh, round-trip protocol và tạo/hủy MainFrame thật, không hiện cửa sổ.
+4. Thử Access Bridge bình thường và ép bật.
+5. Nhúng runtime, chạy chính EXE với --diagnose.
+
+Trên máy nhận Windows:
+
+~~~powershell
+$p = Start-Process .\TankOps.exe -ArgumentList '--diagnose' -PassThru -Wait
+$p.ExitCode
+~~~
+
+0 là self-test đạt. Chế độ này không cần server. Nó kiểm tra giải mã âm thanh, chưa kiểm chứng loa/driver hoặc độ mượt trận.
+
+Native Mac và native Ubuntu cũng kiểm tra runtime đóng gói trước khi tạo archive cuối. Chưa chạy native Mac/Linux trong môi trường Windows hiện tại; kiểm tra cú pháp không thay thế chạy trên OS đích.
+
+Build Windows còn chạy chính EXE với profile tạm: lần đầu không có Java trong PATH; lần sau có JAVA_HOME không tồn tại và các tùy chọn JVM sai; cuối cùng là EXE/thư mục profile có ký tự Unicode. Cả ba phải trả mã 0 trước khi xuất EXE. Bài kiểm tra sử dụng runtime nhúng và giữ log trong thư mục tạm để đối chiếu; không xóa cache người dùng.
+
+### Maven
+
+Chạy common/server/client bằng JDK 21+:
+
+~~~bash
+mvn -B -pl tankops-client,tankops-server -am test
+~~~
+
+Kiểm thử sạch sau khi dọn: common 77, server 46, client 22, tổng **145 tests**, 0 failure/error. Bốn test của lớp InterpolationBuffer đã bị thay thế được bỏ cùng lớp cũ; không cộng các báo cáo XML cũ còn nằm trong target.
+
+Các nhóm test cần giữ: engine/map/codec malformed và round-trip; room/lifecycle/concurrency/stress/socket; input nhanh/reset; nội suy; preview va chạm/mất snapshot/respawn; đo RTT. TickRateExperiment là công cụ thí nghiệm của nhóm, vẫn giữ.
+
+Không gộp test database vào số trên: test MongoDB riêng có thể cần dịch vụ ngoài và có thao tác ghi. Chưa coi database transaction hoặc lưu trận end-to-end là đã nghiệm thu.
+
+### Ma trận yêu cầu cũ
+
+| TC | Bằng chứng/trạng thái hiện tại |
+| --- | --- |
+| TC01–05 | Engine có test đạn, va chạm, tường, chết/respawn; không suy ra mọi trường hợp gameplay đã được phủ |
+| TC06–07 | Round-trip và malformed protocol có kiểm thử |
+| TC08–10 | Join room, room full và concurrent join có kiểm thử |
+| TC11 | Có cleanup/disconnect, stress và socket tests; cần thử thực tế ngắt máy giữa trận |
+| TC12 | UI multiplayer đã nối; cần nghiệm thu nhiều máy nhìn thấy diễn biến nhất quán |
+| TC13–14 | Repository MongoDB đã có nhưng chưa nối server và chưa chứng minh ACID/rollback cho lưu trận |
+| TC15 | Chưa có leaderboard trong luồng game hiện tại |
+| TC16 | Chưa triển khai ReplayRecorder/ReplayPlayer |
+| TC17 | Có test input/reset và startup; độ mượt/phản hồi qua Internet cần đo thực tế |
+
+### Trước buổi demo
+
+- Chạy trên máy sạch/VM chưa cài Java, đúng OS/chip. Mô phỏng PATH sạch trên máy build chưa thay thế hoàn toàn máy sạch.
+- Thử giải nén cache lần đầu bằng tài khoản thử nghiệm; thử tên tài khoản/đường dẫn có dấu và khoảng trắng.
+- Mở offline, kiểm tra hình ảnh/phím/âm thanh rồi chơi 2 máy khác mạng; thử READY/START, bắn, chết, kết quả, rời và chơi lại.
+- Thử đủ 5 người/phòng và từ chối người thứ 6; đo RTT/tick/render trước khi kết luận tải.
+- Ghi SHA-256 của đúng bản đã test, phát đúng file đó. Không lấy kết quả test bản cũ để chứng minh file vừa build lại.
+
+## 9. Chẩn đoán lỗi thường gặp
+
+| Hiện tượng | Kiểm tra/xử lý |
+| --- | --- |
+| SSH 127.0.0.1:2222 bị từ chối | Chạy lệnh phía Windows; VM đang bật, NAT forwarding đúng máy ảo, sshd nghe cổng 22 |
+| Không thấy ~/TankOps | Chưa chuyển ZIP hoặc giải nén; scp chạy từ PowerShell Windows, unzip chạy trong Ubuntu |
+| --local nhưng log vẫn hiện IP Tailscale | Script Ubuntu cũ đã bỏ qua tham số; Ctrl+C rồi chạy Java với -Dtankops.bindAddress=127.0.0.1 và kiểm tra log/ss trước khi mở Pinggy |
+| Thấy phòng nhưng START không vào trận | Đủ 2 người/READY/host; đối chiếu client/server cùng protocol, đọc log sau START |
+| Phòng báo PLAYING nhưng client đứng màn chờ | Không kết luận tunnel hỏng; kiểm tra snapshot/decode và phiên bản hai đầu |
+| Build thiếu JDK | Chỉ định -JdkHome tới thư mục JDK 21+ có javac/jar/jlink/jdeps; Java trong Ubuntu không dùng để build Windows |
+| PowerShell chặn .ps1 | Dùng powershell -NoProfile -ExecutionPolicy Bypass -File cho lần build; không cần đổi chính sách lâu dài |
+| Failed to launch JVM / exit code 1 | Dùng EXE mới và đọc log; không cài Java ngoài theo phỏng đoán |
+| ClassNotFoundException AccessBridge | Runtime phải có jdk.accessibility; test-AppImage và --diagnose đã kiểm tra trường hợp bật trợ năng |
+| Tên Windows có dấu | Launcher thử đường dẫn ngắn; nếu không có thì cache cạnh EXE trong thư mục ASCII có quyền ghi |
+| Không ghi đè được EXE | Đóng game cũ; không tự giết phiên chơi đang chạy để build |
+| Xe giật/phím chậm | Xem RTT và cảnh báo snapshot; so với kết nối trực tiếp, đo tick/render. Không tăng tick rate tùy tiện |
+
+Log tại %LOCALAPPDATA%/TankOps/logs hoặc .tankops-cache/logs cạnh EXE khi dùng cache dự phòng. Giữ nguyên thông tin lỗi trước khi xóa cache/cài lại.
+
+## 10. Công việc còn lại
+
+1. Nghiệm thu native Mac Intel/Apple Silicon và Ubuntu bằng gói tự chứa, máy nhận chưa có Java.
+2. Đo nhiều mẫu RTT/jitter, tuổi queue, tick và render khi chơi thực tế 2–5 người; chưa hứa mức FPS/latency tuyệt đối.
+3. Nếu cần prediction đầy đủ: thiết kế sequence input/ACK, replay và reconciliation; InputMessage.tick hiện chưa phải ACK sequence.
+4. Tối ưu encode broadcast một lần và delta map khi có số đo; phải bảo toàn âm thanh/sự kiện và đồng bộ lại khi join.
+5. Tích hợp MongoDB với finishGame bất đồng bộ và test lỗi/transaction; cấu hình kết nối database cần tách khỏi source trước khi phát triển luồng thật.
+6. Replay, leaderboard và benchmark BotClient/BenchmarkRunner vẫn là việc chưa hoàn thành.
+7. Có thể thay chat command READY/START bằng message riêng khi cả client/server cùng cập nhật.
+
+## 11. Dọn tài liệu và code
+
+Các hướng dẫn triển khai, macOS, release validation, phân tích hiệu năng và thiết kế mạng cũ đã hợp nhất vào đây; không giữ các bản MD mâu thuẫn với source. protocol.md giữ vai trò đặc tả wire riêng.
+
+Đã bỏ các phần không có tham chiếu runtime: MockGameState, ScreenManager/HudPanel rỗng, InterpolationBuffer cũ cùng test của nó, RuntimeSmokeTest thủ công đã được thay bằng StartupCheck/Test-AppImage, chương trình Hello World database/src/Main.java và test_client.ps1 gửi text không phù hợp TCP binary.
+
+Giữ module database, test có ý nghĩa, TickRateExperiment, Explosion đang được renderer sử dụng và các script đóng gói có đầu ra khác nhau. Không dọn đệ quy target/dist hoặc xóa các bản build/cached runtime đang dùng trong phiên chơi. File trong target là dữ liệu sinh và đã bị Git bỏ qua.
