@@ -73,9 +73,8 @@ public class ClientSession implements Runnable {
         this.currentRoom = room;
     }
 
-    // =========================================================================
-    // SEND API (thread-safe)
-    // =========================================================================
+
+    // SEND API (thread-safe )
 
     /**
      * Gửi bản tin nhị phân tới client.
@@ -96,9 +95,7 @@ public class ClientSession implements Runnable {
         }
     }
 
-    // =========================================================================
     // RUN LOOP
-    // =========================================================================
 
     @Override
     public void run() {
@@ -141,9 +138,7 @@ public class ClientSession implements Runnable {
         }
     }
 
-    // =========================================================================
     // DISPATCH MESSAGE
-    // =========================================================================
 
     private void handleMessage(Message message) {
         switch (message) {
@@ -264,9 +259,7 @@ public class ClientSession implements Runnable {
         }
     }
 
-    // TẠM THỜI: protocol chưa có tin nhắn "bắt đầu ván". Trong lúc chờ M1 thêm StartGameMessage,
-    // người chơi gõ chat "/start" để bắt đầu. Khi có StartGameMessage, bỏ nhánh này và
-    // gọi handleStartRequest() từ handleMessage.
+    // người chơi gõ chat "/start" để bắt đầu.
     private static final String START_COMMAND = "/start";
 
     private void handleStartRequest() {
@@ -330,9 +323,7 @@ public class ClientSession implements Runnable {
         }
     }
 
-    // =========================================================================
     // CLEANUP
-    // =========================================================================
 
     private void cleanup() {
         // Có thể bị gọi 2 lần (tin Disconnect rồi finally). Chỉ làm đúng 1 lần.

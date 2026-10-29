@@ -11,7 +11,6 @@ import tankops.server.net.ClientSession;
 /**
  * Quản lý tất cả phòng: tạo phòng, liệt kê phòng, vào phòng, rời phòng, bắt đầu ván.
  * Giới hạn số phòng (server.maxRooms) và số người mỗi phòng (room.maxPlayers).
- *
  * Phòng có sẵn: server luôn cố giữ ít nhất minLobbyRooms phòng đang chờ (LOBBY),
  * để người chơi vào lobby là thấy phòng ngay, không phải tự tạo.
  */
