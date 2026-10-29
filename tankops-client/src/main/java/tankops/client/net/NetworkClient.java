@@ -60,6 +60,20 @@ public final class NetworkClient {
     private volatile DataOutputStream socketOut;
     private volatile MessageWriter writer;
     private final AtomicBoolean     connected   = new AtomicBoolean(false);
+    private volatile long roundTripMillis = -1;
+    private volatile long pendingPing;
+    private long lastPing;
+
+    public long getRoundTripMillis() { return roundTripMillis; }
+
+    /** Called by the EDT input timer; measures the actual game tunnel including writer delay. */
+    public void requestLatencySample() {
+        if (!connected.get()) return;
+        long now = System.nanoTime();
+        if (lastPing != 0 && now - lastPing < 1_000_000_000L) return;
+        pendingPing = now;
+        if (sendMessage(new PingMessage(now))) lastPing = now;
+    }
 
     /** Timeout kết nối TCP: 5 giây theo đặc tả kỹ thuật. */
     private static final int CONNECT_TIMEOUT_MS = 5_000;
@@ -107,6 +121,9 @@ public final class NetworkClient {
             this.socketIn  = new DataInputStream(s.getInputStream());
             this.socketOut = new DataOutputStream(s.getOutputStream());
             connected.set(true);
+            roundTripMillis = -1;
+            pendingPing = 0;
+            lastPing = 0;
             this.writer = new MessageWriter(socketOut, 32, () -> {
                 try { s.close(); } catch (IOException ignored) { }
             }, "NetworkClient-Writer");
@@ -235,6 +252,10 @@ public final class NetworkClient {
     }
 
     private void handleIncomingMessage(Message message) {
+        if (message instanceof PongMessage pong && pong.timestamp() == pendingPing) {
+            roundTripMillis = Math.max(0, (System.nanoTime() - pong.timestamp()) / 1_000_000L);
+            return;
+        }
         if (message instanceof PingMessage ping) {
             sendMessage(new PongMessage(ping.timestamp()));
             return;

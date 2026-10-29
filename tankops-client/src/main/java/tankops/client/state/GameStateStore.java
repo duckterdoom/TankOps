@@ -28,6 +28,11 @@ public class GameStateStore implements MessageListener {
 
     private final AtomicReference<SnapshotMessage> latestSnapshot = new AtomicReference<>(null);
     private final RenderInterpolator renderInterpolator = new RenderInterpolator();
+    private volatile long lastSnapshotTime;
+
+    public long getSnapshotAgeMillis() {
+        return latestSnapshot.get() == null ? -1 : Math.max(0, (System.nanoTime() - lastSnapshotTime) / 1_000_000L);
+    }
 
     public SnapshotMessage getRenderSnapshot() {
         return renderInterpolator.sample(getAssignedPlayerId());
@@ -78,6 +83,7 @@ public class GameStateStore implements MessageListener {
                 notifyStateChanged();
             }
             case SnapshotMessage snap -> {
+                lastSnapshotTime = System.nanoTime();
                 latestSnapshot.set(snap);
                 renderInterpolator.push(snap);
                 processExplosionDetection(snap.tanks(), snap.bullets());

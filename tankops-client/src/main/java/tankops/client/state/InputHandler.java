@@ -11,6 +11,15 @@ public class  InputHandler {
     private boolean isShooting;
     private int mouseX, mouseY;
     private Runnable onInputChanged = () -> { };
+    private java.awt.Window observedWindow;
+    private final java.awt.event.WindowFocusListener windowFocus = new java.awt.event.WindowAdapter() {
+        @Override public void windowLostFocus(java.awt.event.WindowEvent event) { clear(); }
+    };
+
+    public void clear() {
+        up = down = left = right = isShooting = false;
+        onInputChanged.run();
+    }
 
     public void setOnInputChanged(Runnable listener) {
         onInputChanged = listener != null ? listener : () -> { };
@@ -19,6 +28,13 @@ public class  InputHandler {
     public InputHandler(JComponent component) {
         setupKeyBindings(component);
         setupMouseListeners(component);
+        component.addHierarchyListener(event -> {
+            java.awt.Window window = SwingUtilities.getWindowAncestor(component);
+            if (window == observedWindow) return;
+            if (observedWindow != null) observedWindow.removeWindowFocusListener(windowFocus);
+            observedWindow = window;
+            if (window != null) window.addWindowFocusListener(windowFocus);
+        });
     }
 
     private void setupKeyBindings(JComponent component) {

@@ -3,6 +3,7 @@ package tankops.client.ui.panels;
 import tankops.client.controller.MultiplayerController;
 import tankops.client.controller.SinglePlayerController;
 import tankops.client.state.GameStateStore;
+import tankops.client.state.LocalTankPreview;
 import tankops.client.state.InputHandler;
 import tankops.client.ui.MainFrame;
 import tankops.client.ui.ScreenState;
@@ -41,6 +42,8 @@ public class GamePanel extends JPanel {
     private GameStateStore gameStateStore;
 
     private GameState multiMapState;
+    private final LocalTankPreview localPreview = new LocalTankPreview();
+    private double multiMapWidth, multiMapHeight;
     private GameStateStore.StateChangeListener gameListener;
     private java.util.List<Environment> multiStaticEnvironments = new java.util.ArrayList<>();
     private java.util.List<EnvironmentSnapshot> cachedEnvironments;
@@ -99,12 +102,17 @@ public class GamePanel extends JPanel {
         this.gameStateStore = gameStateStore;
         this.gameStateStore.setInGame(true);
         this.multiMapState = new GameState();
+        localPreview.clear();
+        multiMapWidth = 0;
+        multiMapHeight = 0;
         cachedEnvironments = null;
         cachedPowerUps = null;
         try {
             MapLoader loader = new MapLoader();
             GameMap multiMap = loader.loadMap("/maps/map_multi.map");
             if (multiMap != null) {
+                multiMapWidth = multiMap.getCols() * Environment.TILE_SIZE;
+                multiMapHeight = multiMap.getRows() * Environment.TILE_SIZE;
                 // Nước, cây, băng không bao giờ đổi trong ván nên client đọc từ file bản đồ.
                 // Tường gạch/thép thì server gửi trong snapshot (có thể bị phá hoặc đổi thành thép).
                 this.multiStaticEnvironments = new java.util.ArrayList<>();
@@ -337,17 +345,35 @@ public class GamePanel extends JPanel {
                 SnapshotMessage snapshot = gameStateStore.getRenderSnapshot();
                 if (snapshot == null) return;
                 syncMapFromSnapshot(snapshot);
+                java.util.List<tankops.common.net.game.TankSnapshot> displayTanks = new java.util.ArrayList<>(snapshot.tanks());
+                String localId = gameStateStore.getAssignedPlayerId();
+                boolean hasLocal = false;
+                for (int i = 0; i < displayTanks.size(); i++) {
+                    var tank = displayTanks.get(i);
+                    if (tank.id().equals(localId) && multiMapWidth > 0 && multiMapHeight > 0) {
+                        hasLocal = true;
+                        displayTanks.set(i, localPreview.sample(tank, snapshot.tick(), inputHandler.getMovementDirection(),
+                                multiMapState.getEnvironments(), multiMapWidth, multiMapHeight));
+                    }
+                }
+                if (!hasLocal) localPreview.clear();
 
                 renderer.renderSnapshots(
                         g2d,
                         multiMapState,
-                        snapshot.tanks(),
+                        displayTanks,
                         snapshot.bullets(),
                         gameStateStore.getActiveExplosions(),
                         gameStateStore.getAssignedPlayerId(),
                         getWidth(),
                         getHeight()
                 );
+                long rtt = tankops.client.net.NetworkClient.getInstance().getRoundTripMillis();
+                long age = gameStateStore.getSnapshotAgeMillis();
+                g2d.setFont(new Font("SansSerif", Font.PLAIN, 12));
+                g2d.setColor(age > 250 ? Color.ORANGE : Color.LIGHT_GRAY);
+                g2d.drawString("RTT: " + (rtt >= 0 ? rtt + " ms" : "measuring...")
+                        + (age > 250 ? " | Waiting for server updates" : ""), 12, getHeight() - 12);
             }
         } else {
             if (singleController != null) {
@@ -360,6 +386,8 @@ public class GamePanel extends JPanel {
     }
 
     public void stopGame() {
+        inputHandler.clear();
+        localPreview.clear();
         isMultiplayer = false;
         if (gameStateStore != null && gameListener != null) {
             gameStateStore.removeStateChangeListener(gameListener);

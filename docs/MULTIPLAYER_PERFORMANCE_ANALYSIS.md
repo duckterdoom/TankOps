@@ -1,5 +1,16 @@
 # Phân tích độ mượt multiplayer
 
+## Bổ sung phản hồi cục bộ và đo trong trận
+
+- Client có `LocalTankPreview`: phản hồi hiển thị theo phím ở nhịp render, giới hạn lệch tối đa 12 px so với snapshot mới nhất. Dùng tốc độ mặc định của player ở server 30 Hz; đây là dự đoán hình ảnh có giới hạn, không phải replay input có ACK và không sửa GameState authoritative.
+- Kiểm tra AABB với tường/nước và biên map; bỏ dự đoán trên băng, khi chết, respawn hoặc đổi ván. Ngừng tiến thêm khi không nhận snapshot mới quá 250 ms. Server vẫn quyết định vị trí thật, đạn, sát thương, điểm; có thể thấy điều chỉnh vị trí nhỏ khi đồng bộ.
+- Có RTT ứng dụng ở góc màn chơi, đo bằng Ping/Pong có sẵn mỗi giây; cảnh báo khi snapshot không cập nhật quá 250 ms. RTT gồm chờ writer và xử lý ứng dụng, không chỉ đường truyền mạng. Không thay định dạng giao thức, server hiện tại vẫn nhận được.
+- Nhả trạng thái phím khi cửa sổ mất focus hoặc dừng ván, tránh xe tiếp tục chạy/bắn vì sự kiện release không tới game.
+- Âm thanh có queue hữu hạn, giới hạn âm trượt băng lặp lại và đóng stream sau khi nạp clip. Đây là giới hạn tác vụ âm thanh, không bỏ sự kiện gameplay hoặc snapshot.
+- Test mới kiểm tra phản hồi trước snapshot tiếp theo, giới hạn dự đoán khi mạng ngừng cập nhật, tường/nước/biên, respawn/băng/chết, RTT qua TCP và reset phím. Chưa đo cải thiện thực tế trên máy người chơi qua Pinggy.
+
+Các nhận xét phía dưới về việc chưa có dự đoán mô tả baseline trước thay đổi này. Chưa có prediction/reconciliation đầy đủ với sequence ACK và chưa thay đổi tick rate.
+
 ## Cập nhật triển khai
 
 Các mục phân tích bên dưới mô tả trạng thái trước tối ưu. Hiện đã thực hiện:

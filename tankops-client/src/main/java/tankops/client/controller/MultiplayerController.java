@@ -44,6 +44,7 @@ public class MultiplayerController {
 
     private void sendInput(boolean pulse) {
         if (!isRunning || !networkClient.isConnected() || !gameStateStore.isInGame()) return;
+        networkClient.requestLatencySample();
         String playerId = gameStateStore.getAssignedPlayerId();
         if (playerId == null) return;
         Direction direction = inputHandler.getMovementDirection();
