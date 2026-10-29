@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS
 project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 [[ "$(uname -s)" == Darwin ]] || { echo 'Run this build on macOS with JDK 21+.' >&2; exit 1; }
 if [[ -n "${JAVA_HOME:-}" ]]; then jdk="$JAVA_HOME"; else jdk=$(/usr/libexec/java_home -v 21+); fi

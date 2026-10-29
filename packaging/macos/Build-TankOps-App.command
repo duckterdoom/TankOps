@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd -- "$script_dir"
 [[ "$(uname -s)" == Darwin ]] || { echo 'Build this app on macOS.' >&2; exit 1; }
@@ -33,6 +34,9 @@ app="$build_dir/output/TankOps.app"
 env -u JAVA_HOME -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS -u JDK_JAVA_OPTIONS \
     PATH=/usr/bin:/bin:/usr/sbin:/sbin "$app/Contents/MacOS/TankOps" --self-test
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$build_dir/output/TankOps.app" "$build_dir/TankOps-App.zip"
+arch=$("$jdk/bin/java" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/os.arch =/ {print $2}')
+share_zip="$output_root/TankOps-Mac-$arch.zip"
+cp "$build_dir/TankOps-App.zip" "$share_zip"
 echo "Ready: $build_dir/output/TankOps.app"
-echo "Share: $build_dir/TankOps-App.zip (for Macs compatible with this JDK architecture)."
+echo "Share: $share_zip (for Macs compatible with this JDK architecture)."
 echo 'This app includes Java. It is not Developer ID signed or notarized; see HUONG-DAN.md.'
