@@ -1,44 +1,42 @@
 # TankOps
 
-**MacBook:** dùng `TankOps-Mac.zip`, giải nén và mở `Start-TankOps.command` sau khi cài Java 21+ cho Mac. Gói dùng được với Java phù hợp trên Mac Intel hoặc Apple Silicon. Có sẵn script tạo `.app` kèm Java trên Mac; xem [hướng dẫn macOS](docs/MACOS_SETUP.md).
+Game xe tăng Java/Swing: chơi đơn offline và multiplayer TCP, tối đa 5 người/phòng.
 
-**Phát hành cho máy chưa có Java:** Windows dùng EXE đã qua kiểm tra build; Mac dùng `.app` kèm runtime từ `Build-Mac-Native.sh`, không dùng gói JAR `TankOps-Mac.zip`. Xem [quy trình kiểm chứng phát hành](docs/RELEASE_VALIDATION.md) để chọn đúng gói và kiểm tra trước buổi demo.
+## Mở game
 
-Nhánh `test_main` chứa sẵn `TankOps.exe` cho người chơi Windows x64 và `TankOps-Ubuntu.zip` cho máy chủ Ubuntu. Sau khi clone hoặc tải ZIP mã nguồn và giải nén, có thể dùng ngay hai tệp này, không cần build lại. Người chơi chỉ cần `TankOps.exe`; địa chỉ server do người chạy server cung cấp.
+- **Windows x64:** mở TankOps.exe, không cần cài Java. Giữ đủ thời gian giải nén lần đầu.
+- **Mac chưa có Java:** dùng ZIP chứa TankOps.app, được build trên Mac bằng Build-Mac-Native.sh, đúng chip Intel/Apple Silicon.
+- **TankOps-Mac.zip:** gói JAR phát triển, cần Java 21+ trên Mac; giải nén và mở Start-TankOps.command.
+- **Tạo ZIP Mac không cần Java:** trên Mac có JDK 21+, giải nén TankOps-Mac.zip rồi chạy `bash Build-TankOps-App.command` trong thư mục vừa giải nén. Gửi file `TankOps-Mac-aarch64.zip` (Apple Silicon) hoặc `TankOps-Mac-x86_64.zip` (Intel) được tạo ở cùng thư mục cho người chơi; họ giải nén và mở TankOps.app.
+- **Server Ubuntu:** TankOps-Ubuntu.zip cần Java 21+; bản native tar.gz được build trên Linux có runtime đi kèm.
 
-Nhấp đúp **`TankOps.exe`** ngay ở thư mục gốc để mở game, không cần vào IDE.
+Multiplayer: nhập tên khác nhau và địa chỉ server **host:port**, không thêm tcp://. Vào cùng phòng, tối thiểu 2 người; thành viên READY rồi chủ phòng START. Với Pinggy, chủ server cung cấp địa chỉ hiện tại và giữ server/tunnel hoạt động.
 
-Chỉ cần **một file `TankOps.exe`** để chơi hoặc gửi sang máy Windows x64 khác.
-File này đã chứa Java, bản đồ, hình ảnh và âm thanh; người chơi không cần cài Java
-hoặc Maven. Lần mở đầu tiên, game tự giải nén vào `%LOCALAPPDATA%\TankOps\versions`
-(có thể mất vài giây); các lần sau dùng lại dữ liệu đã giải nén.
-Mỗi bản build có bộ nhớ đệm riêng theo mã SHA-256 của nội dung game.
+## Tài liệu
 
-Nếu máy Windows báo lỗi khởi động, bản launcher mới ghi chi tiết tại
-`%LOCALAPPDATA%\TankOps\logs`. Có thể chạy `./TankOps.exe --diagnose` trong PowerShell
-để kiểm tra Java đi kèm mà không mở game. Gửi file `.log` mới nhất khi cần chẩn đoán;
-không cần cài Java ngoài hoặc tắt Windows Security. Launcher Windows hiện dành cho x64.
-Nếu đường dẫn tài khoản Windows có dấu, launcher thử tên đường dẫn ngắn tương thích;
-nếu không có, dùng `.tankops-cache` cạnh EXE trong thư mục có đường dẫn không dấu và có quyền ghi.
-Trong trường hợp đó log nằm tại `.tankops-cache/logs`. Không cần xóa cache cũ thủ công.
-Runtime Windows bao gồm `jdk.accessibility` để game khởi động được khi tài khoản Windows
-đã bật Java Access Bridge. Không cần tắt trợ năng hoặc sửa `.accessibility.properties` của người dùng.
+- [Hướng dẫn server và Pinggy](docs/PINGGY_SERVER_GUIDE.md): bật server, mở tunnel và nhập địa chỉ vào game từng bước.
+- [SYSTEM_ANALYSIS.md](SYSTEM_ANALYSIS.md): hiện trạng, triển khai Ubuntu VM/Pinggy/Tailscale, build Windows/Mac/Linux, tối ưu mạng, kiểm chứng và chẩn đoán lỗi.
+- [docs/protocol.md](docs/protocol.md): đặc tả TCP binary theo codec hiện tại.
 
-Chọn **ENTER GAME → Singleplayer** để chơi offline. Multiplayer cần server chạy riêng.
+## Build nhanh trên Windows
 
-Để chơi qua các mạng khác nhau bằng Ubuntu VM + Tailscale, dùng gói server
-`TankOps-Ubuntu.zip` và làm theo [hướng dẫn Tailscale](docs/TAILSCALE_SETUP.md).
-Mỗi phòng tối đa **5 người**. Client nhớ tên và địa chỉ server trên máy người chơi;
-chỉ cần nhập IP Tailscale hoặc tên DNS của Ubuntu, cổng mặc định là 5555.
+Cần JDK 21+ đầy đủ; thay đường dẫn bằng JDK thật. Đóng game trước khi ghi đè EXE.
 
-Khi sửa hoặc kéo code mới, đóng game và chạy lại lệnh sau trong PowerShell tại thư mục dự án để cập nhật bản exe:
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-TankOps.ps1 -JdkHome "C:\duong-dan\jdk-21"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Server.ps1 -JdkHome "C:\duong-dan\jdk-21"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-Mac.ps1 -JdkHome "C:\duong-dan\jdk-21"
+~~~
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-TankOps.ps1
-```
+Windows build kiểm tra runtime, tài nguyên, khởi tạo Swing và Access Bridge trước khi xuất EXE. Có thể kiểm tra lại trên máy nhận:
 
-Để build cần JDK 21 trở lên và .NET Framework có sẵn trên Windows.
-Script tự tìm JDK qua `JAVA_HOME`, `PATH`, thư mục `.jdks` và các thư mục cài đặt phổ biến.
-Có thể chỉ định thủ công bằng `-JdkHome "C:\duong-dan\jdk-21"`.
-Script chỉ đóng gói mã production của `tankops-common` và `tankops-client`,
-kèm bản đồ, sprite và âm thanh; không cần Maven hoặc module database.
+~~~powershell
+$p = Start-Process .\TankOps.exe -ArgumentList '--diagnose' -PassThru -Wait
+$p.ExitCode
+~~~
+
+Mã 0 là self-test đạt. Log tại %LOCALAPPDATA%/TankOps/logs hoặc .tankops-cache/logs cạnh EXE. Kiểm tra này chưa thay thế thử game trên máy sạch và chơi nhiều máy khác mạng. Native Mac/Linux cần được chạy kiểm chứng trên OS đích.
+
+Bản EXE và bản TankOps.app tự chứa luôn dùng Java đi kèm; máy có Java/JDK khác phiên bản vẫn chạy bằng runtime của game. Gói JAR TankOps-Mac.zip dùng Java của máy nên cần Java 21 trở lên. Không cần gỡ hay đổi Java đang dùng cho dự án khác.
+
+Mỗi lần build EXE còn kiểm tra giải nén lần đầu khi PATH không có Java, mở lại với JAVA_HOME sai/các tùy chọn JVM không hợp lệ, và chạy EXE từ đường dẫn có dấu. Các kiểm tra này chạy trước khi thay file TankOps.exe phát hành.
