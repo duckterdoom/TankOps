@@ -191,8 +191,8 @@ public class RoomPanel extends JPanel {
 
     private String getStartButtonTooltip(boolean isHost, int totalPlayers, boolean allReady) {
         if (!isHost) return null;
-        if (totalPlayers < 2) return "Cần tối thiểu 2 người chơi để bắt đầu!";
-        if (!allReady) return "Đang chờ tất cả thành viên bấm READY!";
+        if (totalPlayers < 2) return "Need at least 2 players to start!";
+        if (!allReady) return "Waiting for all members to READY!";
         return null;
     }
     private void toggleReady() {
@@ -224,8 +224,8 @@ public class RoomPanel extends JPanel {
         if (totalPlayers < 2) {
             JOptionPane.showMessageDialog(
                     this,
-                    "Cần tối thiểu 2 người chơi trong phòng để bắt đầu trận đấu!",
-                    "Chưa đủ người",
+                    "Need at least 2 players to start!",
+                    "Not enough players",
                     JOptionPane.WARNING_MESSAGE
             );
             return;
@@ -236,8 +236,8 @@ public class RoomPanel extends JPanel {
         if (!checkAllMembersReady(playerNames, readyNames)) {
             JOptionPane.showMessageDialog(
                     this,
-                    "Không thể bắt đầu! Vẫn còn thành viên trong phòng chưa bấm READY.",
-                    "Chưa sẵn sàng",
+                    "Cannot start! Someone is not READY.",
+                    "Not ready",
                     JOptionPane.WARNING_MESSAGE
             );
             return;

@@ -262,7 +262,7 @@ public class LobbyPanel extends JPanel {
 
             String joinError = gameStateStore.consumeJoinError();
             if (joinError != null && !joinError.isBlank() && isShowing()) {
-                JOptionPane.showMessageDialog(this, joinError, "Vào phòng thất bại", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, joinError, "Cannot join", JOptionPane.ERROR_MESSAGE);
             }
 
 
@@ -282,7 +282,7 @@ public class LobbyPanel extends JPanel {
     private void joinRoom(RoomInfo info) {
         // Kiểm tra nếu phòng đã đầy hoặc đang chơi trên UI thì chặn ngay từ Client
         if (!"LOBBY".equalsIgnoreCase(info.state())) {
-            JOptionPane.showMessageDialog(this, "Phòng này đang trong trận đấu!", "Không thể vào", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "This room is playing!", "Cannot join", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -291,8 +291,8 @@ public class LobbyPanel extends JPanel {
         if (info.currentPlayers() >= info.maxPlayers()) {
             JOptionPane.showMessageDialog(
                     this,
-                    "Phòng này đã đầy (" + info.currentPlayers() + "/" + info.maxPlayers() + ")!",
-                    "Phòng đầy",
+                    "This room is full (" + info.currentPlayers() + "/" + info.maxPlayers() + ")!",
+                    "Full room",
                     JOptionPane.WARNING_MESSAGE
             );
             return;
