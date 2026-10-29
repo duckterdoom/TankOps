@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 
 try {
-    $jdk = & (Join-Path $projectRoot 'packaging\Find-Jdk.ps1') -JdkHome $JdkHome -RequiredTools @('javac.exe', 'jar.exe', 'jlink.exe')
+    $jdk = & (Join-Path $projectRoot 'packaging\Find-Jdk.ps1') -JdkHome $JdkHome -RequiredTools @('javac.exe', 'jar.exe', 'jlink.exe', 'jdeps.exe')
 
     $buildRoot = Join-Path $projectRoot ('target\windows-package\' + [Guid]::NewGuid().ToString('N'))
     $classes = Join-Path $buildRoot 'classes'
@@ -42,14 +42,18 @@ try {
     $appRoot = Join-Path $imageDir 'TankOps'
     $appDir = Join-Path $appRoot 'app'
     New-Item -ItemType Directory -Path $appDir -Force | Out-Null
+    $detectedModules = & (Join-Path $jdk 'bin\jdeps.exe') --print-module-deps $jarPath
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot determine runtime modules.' }
+    $runtimeModules = ((($detectedModules -join ',') + ',jdk.accessibility').Split(',') | Sort-Object -Unique) -join ','
     # Keep java.exe: the outer launcher starts it directly and captures JVM diagnostics.
     # jpackage's default runtime strips these commands and its native launcher only
     # reports the generic "Failed to launch JVM" on affected machines.
     & (Join-Path $jdk 'bin\jlink.exe') --module-path (Join-Path $jdk 'jmods') `
-        --add-modules java.desktop --strip-debug --no-header-files --no-man-pages `
+        --add-modules $runtimeModules --strip-debug --no-header-files --no-man-pages `
         --output (Join-Path $appRoot 'runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Creating the bundled Java runtime failed.' }
     Copy-Item -LiteralPath $jarPath -Destination (Join-Path $appDir 'TankOps.jar')
+    & (Join-Path $projectRoot 'packaging\windows\Test-AppImage.ps1') -AppRoot $appRoot
 
     Write-Host 'Embedding the game and Java runtime into one executable...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -71,6 +75,11 @@ try {
         /reference:System.Windows.Forms.dll "/resource:$payload,TankOps.Payload.zip" `
         "/out:$singleExe" (Join-Path $projectRoot 'packaging\windows\Launcher.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Creating the single-file launcher failed.' }
+    $probe = Start-Process -FilePath $singleExe -ArgumentList '--diagnose' -WindowStyle Hidden -PassThru
+    try {
+        if (-not $probe.WaitForExit(60000)) { $probe.Kill(); throw 'Final EXE self-test timed out.' }
+        if ($probe.ExitCode -ne 0) { throw 'Final EXE self-test failed. Check %LOCALAPPDATA%\TankOps\logs.' }
+    } finally { $probe.Dispose() }
     $destination = Join-Path $projectRoot 'TankOps.exe'
     Copy-Item -LiteralPath $singleExe -Destination $destination -Force
     Write-Host "Ready: $destination (single file, bundled Java)"

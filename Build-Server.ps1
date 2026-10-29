@@ -25,6 +25,8 @@ try {
     & (Join-Path $jdk 'bin\jar.exe') --create --file (Join-Path $bundle 'tankops-server.jar') `
         --main-class tankops.server.net.GameServer -C $classes .
     if ($LASTEXITCODE -ne 0) { throw 'Creating the server JAR failed.' }
+    & (Join-Path $jdk 'bin\java.exe') -jar (Join-Path $bundle 'tankops-server.jar') --self-test
+    if ($LASTEXITCODE -ne 0) { throw 'Server self-test failed.' }
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'deploy\ubuntu') -File) {
         # The ZIP is prepared on Windows but shell scripts must use LF on Ubuntu.
         $content = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")

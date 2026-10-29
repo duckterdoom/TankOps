@@ -17,6 +17,7 @@ internal static class Launcher
     private static void Main(string[] args)
     {
         string logPath = null;
+        bool diagnose = Array.IndexOf(args, "--diagnose") >= 0;
         try
         {
             using (Stream payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("TankOps.Payload.zip"))
@@ -66,7 +67,6 @@ internal static class Launcher
                 string logs = Path.Combine(cache, "..", "logs");
                 Directory.CreateDirectory(logs);
                 logPath = Path.GetFullPath(Path.Combine(logs, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + "-" + Process.GetCurrentProcess().Id + ".log"));
-                bool diagnose = Array.IndexOf(args, "--diagnose") >= 0;
                 using (TextWriter log = TextWriter.Synchronized(new StreamWriter(logPath, false, Encoding.UTF8) { AutoFlush = true }))
                 using (Process process = new Process())
                 {
@@ -76,7 +76,7 @@ internal static class Launcher
                     process.StartInfo = new ProcessStartInfo
                     {
                         FileName = executable,
-                        Arguments = diagnose ? "-version" : "-Dfile.encoding=UTF-8 -jar app\\TankOps.jar",
+                        Arguments = "-Dfile.encoding=UTF-8 -jar app\\TankOps.jar" + (diagnose ? " --self-test" : ""),
                         WorkingDirectory = gameDirectory,
                         UseShellExecute = false,
                         CreateNoWindow = true,
@@ -104,7 +104,7 @@ internal static class Launcher
             {
                 try { File.AppendAllText(logPath, Environment.NewLine + error.ToString()); } catch { }
             }
-            MessageBox.Show("Khong the mo TankOps.\n\n" + error.Message
+            if (!diagnose) MessageBox.Show("Khong the mo TankOps.\n\n" + error.Message
                 + (logPath != null ? "\n\nGui file log nay de kiem tra:\n" + logPath : ""),
                 "TankOps", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Environment.ExitCode = 1;

@@ -3,6 +3,10 @@
 `TankOps.exe` chỉ dành cho Windows. Trên macOS dùng gói `TankOps-Mac.zip`.
 Gói này chứa cùng mã client, bản đồ, sprite, âm thanh và giao thức multiplayer với bản Windows cùng lần build.
 
+**Để phát cho máy chưa cài Java:** dùng gói `.app` kèm runtime được tạo bằng `bash Build-Mac-Native.sh` trên máy Mac của nhóm. Script build từ source hiện tại, tự phân tích module bằng jdeps, đóng gói runtime và chạy self-test qua chính launcher `.app` khi bỏ JAVA_HOME/Java khỏi PATH. Chỉ xuất ZIP cuối khi self-test đạt.
+
+Gói kết quả là `TankOps-Mac-aarch64.zip` hoặc `TankOps-Mac-x86_64.zip` theo JDK trên máy build. Người nhận chỉ giải nén và mở `TankOps.app`; không chạy script build và không cài Java. Build riêng cho Intel và Apple Silicon. `TankOps-Mac.zip` bên dưới vẫn là gói JAR dùng để phát triển, **cần Java cài sẵn**, không dùng gói đó để hứa “không cần Java”.
+
 ## Chơi bằng gói ZIP
 
 1. Tải `TankOps-Mac.zip`, giải nén toàn bộ vào một thư mục. Giữ các file cạnh nhau.

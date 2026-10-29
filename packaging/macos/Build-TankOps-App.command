@@ -14,14 +14,24 @@ if [[ ! "$java_version" =~ version\ \"([0-9]+) ]] || (( BASH_REMATCH[1] < 21 ));
     echo 'JDK 21 or newer is required. Check JAVA_HOME.' >&2
     exit 1
 fi
-[[ -f "$script_dir/TankOps.jar" ]] || { echo 'Extract the complete TankOps-Mac.zip first.' >&2; exit 1; }
+source_jar="${TANKOPS_JAR:-$script_dir/TankOps.jar}"
+[[ -f "$source_jar" ]] || { echo 'Extract the complete TankOps-Mac.zip first.' >&2; exit 1; }
 # jpackage creates a runtime for the architecture of this JDK, not a universal app.
-build_dir=$(mktemp -d "$script_dir/app-build.XXXXXX")
+output_root="${TANKOPS_OUTPUT_DIR:-$script_dir}"
+mkdir -p "$output_root"
+build_dir=$(mktemp -d "$output_root/app-build.XXXXXX")
 mkdir -p "$build_dir/input"
-cp "$script_dir/TankOps.jar" "$build_dir/input/TankOps.jar"
+cp "$source_jar" "$build_dir/input/TankOps.jar"
+modules=$("$jdk/bin/jdeps" --print-module-deps "$build_dir/input/TankOps.jar")
+"$jdk/bin/jlink" --module-path "$jdk/jmods" --add-modules "$modules,jdk.accessibility" \
+    --strip-debug --no-header-files --no-man-pages --output "$build_dir/runtime"
 "$jdk/bin/jpackage" --type app-image --name TankOps --input "$build_dir/input" \
     --main-jar TankOps.jar --main-class tankops.client.Main --dest "$build_dir/output" \
-    --app-version 1.0.0 --vendor TankOps --add-modules java.desktop
+    --app-version 1.0.0 --vendor TankOps --runtime-image "$build_dir/runtime"
+app="$build_dir/output/TankOps.app"
+# Test the actual app launcher with external Java and JVM options removed.
+env -u JAVA_HOME -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS -u JDK_JAVA_OPTIONS \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin "$app/Contents/MacOS/TankOps" --self-test
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$build_dir/output/TankOps.app" "$build_dir/TankOps-App.zip"
 echo "Ready: $build_dir/output/TankOps.app"
 echo "Share: $build_dir/TankOps-App.zip (for Macs compatible with this JDK architecture)."

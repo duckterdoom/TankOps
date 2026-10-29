@@ -113,6 +113,14 @@ public class GameServer {
 
     public static void main(String[] args) throws IOException {
         GameServer server = new GameServer();
+        if (java.util.Arrays.asList(args).contains("--self-test")) {
+            GameMap map = server.loadMultiMap();
+            if (map == null || map.getPlayerSpawnPoints().size() < 2) {
+                throw new IOException("Multiplayer map is missing or has too few spawn points");
+            }
+            System.out.println("PASS: packaged server runtime, configuration and multiplayer map.");
+            return;
+        }
         server.start();
     }
 }

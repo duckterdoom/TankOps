@@ -2,6 +2,8 @@
 
 **MacBook:** dùng `TankOps-Mac.zip`, giải nén và mở `Start-TankOps.command` sau khi cài Java 21+ cho Mac. Gói dùng được với Java phù hợp trên Mac Intel hoặc Apple Silicon. Có sẵn script tạo `.app` kèm Java trên Mac; xem [hướng dẫn macOS](docs/MACOS_SETUP.md).
 
+**Phát hành cho máy chưa có Java:** Windows dùng EXE đã qua kiểm tra build; Mac dùng `.app` kèm runtime từ `Build-Mac-Native.sh`, không dùng gói JAR `TankOps-Mac.zip`. Xem [quy trình kiểm chứng phát hành](docs/RELEASE_VALIDATION.md) để chọn đúng gói và kiểm tra trước buổi demo.
+
 Nhánh `test_main` chứa sẵn `TankOps.exe` cho người chơi Windows x64 và `TankOps-Ubuntu.zip` cho máy chủ Ubuntu. Sau khi clone hoặc tải ZIP mã nguồn và giải nén, có thể dùng ngay hai tệp này, không cần build lại. Người chơi chỉ cần `TankOps.exe`; địa chỉ server do người chạy server cung cấp.
 
 Nhấp đúp **`TankOps.exe`** ngay ở thư mục gốc để mở game, không cần vào IDE.
@@ -19,6 +21,8 @@ không cần cài Java ngoài hoặc tắt Windows Security. Launcher Windows hi
 Nếu đường dẫn tài khoản Windows có dấu, launcher thử tên đường dẫn ngắn tương thích;
 nếu không có, dùng `.tankops-cache` cạnh EXE trong thư mục có đường dẫn không dấu và có quyền ghi.
 Trong trường hợp đó log nằm tại `.tankops-cache/logs`. Không cần xóa cache cũ thủ công.
+Runtime Windows bao gồm `jdk.accessibility` để game khởi động được khi tài khoản Windows
+đã bật Java Access Bridge. Không cần tắt trợ năng hoặc sửa `.accessibility.properties` của người dùng.
 
 Chọn **ENTER GAME → Singleplayer** để chơi offline. Multiplayer cần server chạy riêng.
 
