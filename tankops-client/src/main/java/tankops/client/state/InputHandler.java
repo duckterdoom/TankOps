@@ -10,6 +10,11 @@ public class  InputHandler {
     private boolean up, down, left, right;
     private boolean isShooting;
     private int mouseX, mouseY;
+    private Runnable onInputChanged = () -> { };
+
+    public void setOnInputChanged(Runnable listener) {
+        onInputChanged = listener != null ? listener : () -> { };
+    }
 
     public InputHandler(JComponent component) {
         setupKeyBindings(component);
@@ -37,13 +42,13 @@ public class  InputHandler {
         im.put(KeyStroke.getKeyStroke(key), name + "_press");
         am.put(name + "_press", new AbstractAction() {
             @Override
-            public void actionPerformed(ActionEvent e) {onPress.run();}
+            public void actionPerformed(ActionEvent e) {onPress.run(); onInputChanged.run();}
         });
 
         im.put(KeyStroke.getKeyStroke("released " + key), name + "_release");
         am.put(name + "_release", new AbstractAction() {
             @Override
-            public void actionPerformed(ActionEvent e) {onRelease.run();}
+            public void actionPerformed(ActionEvent e) {onRelease.run(); onInputChanged.run();}
         });
     }
 
@@ -64,11 +69,13 @@ public class  InputHandler {
             @Override
             public void mousePressed(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1) isShooting = true;
+                onInputChanged.run();
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1) isShooting = false;
+                onInputChanged.run();
             }
         };
 

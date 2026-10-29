@@ -269,6 +269,7 @@ public class RoomPanel extends JPanel {
 
     private void onStateChanged() {
         SwingUtilities.invokeLater(() -> {
+            if (!isShowing()) return;
             if (gameStateStore != null && gameStateStore.getCurrentRoomId() != null) {
                 refreshPlayerList();
             }

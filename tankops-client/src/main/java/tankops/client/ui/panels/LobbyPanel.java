@@ -220,6 +220,7 @@ public class LobbyPanel extends JPanel {
 
     private void onStateChanged() {
         SwingUtilities.invokeLater(() -> {
+            if (!isShowing()) return;
             if (gameStateStore == null) return;
 
 

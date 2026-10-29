@@ -1,5 +1,7 @@
 # TankOps
 
+**MacBook:** dùng `TankOps-Mac.zip`, giải nén và mở `Start-TankOps.command` sau khi cài Java 21+ cho Mac. Gói dùng được với Java phù hợp trên Mac Intel hoặc Apple Silicon. Có sẵn script tạo `.app` kèm Java trên Mac; xem [hướng dẫn macOS](docs/MACOS_SETUP.md).
+
 Nhánh `test_main` chứa sẵn `TankOps.exe` cho người chơi Windows x64 và `TankOps-Ubuntu.zip` cho máy chủ Ubuntu. Sau khi clone hoặc tải ZIP mã nguồn và giải nén, có thể dùng ngay hai tệp này, không cần build lại. Người chơi chỉ cần `TankOps.exe`; địa chỉ server do người chạy server cung cấp.
 
 Nhấp đúp **`TankOps.exe`** ngay ở thư mục gốc để mở game, không cần vào IDE.

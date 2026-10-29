@@ -22,6 +22,7 @@ import tankops.common.model.powerups.Star;
 import tankops.common.model.powerups.TankPowerUp;
 import tankops.common.net.game.EnvironmentSnapshot;
 import tankops.common.net.game.PowerUpSnapshot;
+import tankops.common.net.game.SnapshotMessage;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 
@@ -42,6 +43,8 @@ public class GamePanel extends JPanel {
     private GameState multiMapState;
     private GameStateStore.StateChangeListener gameListener;
     private java.util.List<Environment> multiStaticEnvironments = new java.util.ArrayList<>();
+    private java.util.List<EnvironmentSnapshot> cachedEnvironments;
+    private java.util.List<PowerUpSnapshot> cachedPowerUps;
 
     private boolean isMultiplayer = false;
 
@@ -89,11 +92,15 @@ public class GamePanel extends JPanel {
     }
 
     public void startMultiPlayer(GameStateStore gameStateStore) {
+        if (isMultiplayer && this.gameStateStore == gameStateStore
+                && gameLoopTimer != null && gameLoopTimer.isRunning()) return;
         stopGame();
         this.isMultiplayer = true;
         this.gameStateStore = gameStateStore;
         this.gameStateStore.setInGame(true);
         this.multiMapState = new GameState();
+        cachedEnvironments = null;
+        cachedPowerUps = null;
         try {
             MapLoader loader = new MapLoader();
             GameMap multiMap = loader.loadMap("/maps/map_multi.map");
@@ -123,11 +130,11 @@ public class GamePanel extends JPanel {
             // Ván vừa kết thúc từ server: mở màn kết quả ĐÚNG MỘT LẦN
             if (gameStateStore.takePendingGameOver()) {
                 SwingUtilities.invokeLater(this::handleGameOver);
-            } else {
-                repaint();
             }
         };
         this.gameStateStore.addStateChangeListener(gameListener);
+        gameLoopTimer = new Timer(16, e -> repaint());
+        gameLoopTimer.start();
         requestFocusInWindow();
     }
 
@@ -276,28 +283,34 @@ public class GamePanel extends JPanel {
      * Đưa tường gạch/thép và vật phẩm do SERVER gửi (trong snapshot) vào multiMapState để vẽ.
      * Client không tự đoán tường nào bị phá: server là bên quyết định.
      */
-    private void syncMapFromSnapshot() {
+    private void syncMapFromSnapshot(SnapshotMessage snapshot) {
         if (multiMapState == null || gameStateStore == null) {
             return;
         }
 
-        java.util.List<Environment> envs = new java.util.ArrayList<>(multiStaticEnvironments);
-        for (EnvironmentSnapshot e : gameStateStore.getEnvironments()) {
-            Vector2D pos = new Vector2D(e.x(), e.y());
-            if ("SteelWall".equals(e.kind())) {
-                envs.add(new SteelWall(e.id(), pos));
-            } else if ("BrickWall".equals(e.kind())) {
-                envs.add(new BrickWall(e.id(), pos));
+        if (!snapshot.environments().equals(cachedEnvironments)) {
+            java.util.List<Environment> envs = new java.util.ArrayList<>(multiStaticEnvironments);
+            for (EnvironmentSnapshot e : snapshot.environments()) {
+                Vector2D pos = new Vector2D(e.x(), e.y());
+                if ("SteelWall".equals(e.kind())) {
+                    envs.add(new SteelWall(e.id(), pos));
+                } else if ("BrickWall".equals(e.kind())) {
+                    envs.add(new BrickWall(e.id(), pos));
+                }
             }
+            multiMapState.setEnvironments(envs);
+            cachedEnvironments = snapshot.environments();
         }
-        multiMapState.setEnvironments(envs);
 
-        multiMapState.getPowerUps().clear();
-        for (PowerUpSnapshot p : gameStateStore.getPowerUps()) {
-            PowerUp powerUp = createPowerUp(p);
-            if (powerUp != null) {
-                multiMapState.addPowerUp(powerUp);
+        if (!snapshot.powerUps().equals(cachedPowerUps)) {
+            multiMapState.getPowerUps().clear();
+            for (PowerUpSnapshot p : snapshot.powerUps()) {
+                PowerUp powerUp = createPowerUp(p);
+                if (powerUp != null) {
+                    multiMapState.addPowerUp(powerUp);
+                }
             }
+            cachedPowerUps = snapshot.powerUps();
         }
     }
 
@@ -321,15 +334,15 @@ public class GamePanel extends JPanel {
 
         if (isMultiplayer) {
             if (gameStateStore != null && gameStateStore.isInGame()) {
-                GameState mapState = singleController != null ? singleController.getGameState() : null;
-
-                syncMapFromSnapshot();
+                SnapshotMessage snapshot = gameStateStore.getRenderSnapshot();
+                if (snapshot == null) return;
+                syncMapFromSnapshot(snapshot);
 
                 renderer.renderSnapshots(
                         g2d,
                         multiMapState,
-                        gameStateStore.getTanks(),
-                        gameStateStore.getBullets(),
+                        snapshot.tanks(),
+                        snapshot.bullets(),
                         gameStateStore.getActiveExplosions(),
                         gameStateStore.getAssignedPlayerId(),
                         getWidth(),
@@ -347,6 +360,11 @@ public class GamePanel extends JPanel {
     }
 
     public void stopGame() {
+        isMultiplayer = false;
+        if (gameStateStore != null && gameListener != null) {
+            gameStateStore.removeStateChangeListener(gameListener);
+            gameListener = null;
+        }
         if (gameLoopTimer != null && gameLoopTimer.isRunning()) {
             gameLoopTimer.stop();
         }

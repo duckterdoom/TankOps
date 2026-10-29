@@ -235,17 +235,17 @@ public final class MessageCodec {
             case GameOverMessage m -> {
                 out.writeUTF(m.winnerId() != null ? m.winnerId() : "");
                 out.writeInt(m.scores().size());
-                for (Map.Entry<String, Integer> e : m.scores().entrySet()) {
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.scores()).entrySet()) {
                     out.writeUTF(e.getKey());
                     out.writeInt(e.getValue());
                 }
                 out.writeInt(m.kills().size());
-                for (Map.Entry<String, Integer> e : m.kills().entrySet()) {
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.kills()).entrySet()) {
                     out.writeUTF(e.getKey());
                     out.writeInt(e.getValue());
                 }
                 out.writeInt(m.deaths().size());
-                for (Map.Entry<String, Integer> e : m.deaths().entrySet()) {
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.deaths()).entrySet()) {
                     out.writeUTF(e.getKey());
                     out.writeInt(e.getValue());
                 }

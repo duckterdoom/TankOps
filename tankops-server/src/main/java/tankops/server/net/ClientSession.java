@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import tankops.common.net.Message;
 import tankops.common.net.codec.MessageCodec;
 import tankops.common.net.codec.ProtocolException;
+import tankops.common.net.codec.MessageWriter;
 import tankops.common.net.lobby.*;
 import tankops.common.net.game.*;
 import tankops.common.net.system.*;
@@ -47,6 +48,7 @@ public class ClientSession implements Runnable {
     // Stream nhị phân theo MessageCodec
     private volatile DataOutputStream dataOut;
     private volatile DataInputStream dataIn;
+    private volatile MessageWriter writer;
 
     // Phòng chơi hiện tại của client này (nếu đã vào phòng)
     private volatile GameRoom currentRoom;
@@ -77,22 +79,11 @@ public class ClientSession implements Runnable {
 
     /**
      * Gửi bản tin nhị phân tới client.
-     * Đồng bộ trên dataOut để tránh xen kẽ dữ liệu giữa các luồng.
+     * Xếp hàng có giới hạn, writer riêng giữ thứ tự và tránh chặn vòng tick.
      */
     public boolean send(Message message) {
-        DataOutputStream out = dataOut;
-        if (out == null) {
-            return false;
-        }
-        try {
-            synchronized (out) {
-                MessageCodec.writeMessage(out, message);
-            }
-            return true;
-        } catch (IOException e) {
-            System.err.println("[ClientSession " + playerId + "] Lỗi gửi message: " + e.getMessage());
-            return false;
-        }
+        MessageWriter current = writer;
+        return current != null && current.send(message);
     }
 
     /**
@@ -119,6 +110,9 @@ public class ClientSession implements Runnable {
             socket.setTcpNoDelay(true); // Gửi gói nhỏ ngay lập tức
             dataIn = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             dataOut = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            writer = new MessageWriter(dataOut, 32, () -> {
+                try { socket.close(); } catch (IOException ignored) { }
+            }, "ClientSession-Writer-" + playerId);
 
             while (!socket.isClosed()) {
                 Message msg;
@@ -142,6 +136,7 @@ public class ClientSession implements Runnable {
         } catch (IOException e) {
             System.out.println("[ClientSession " + playerId + "] Client ngắt kết nối: " + e.getMessage());
         } finally {
+            if (writer != null) writer.close();
             cleanup();
         }
     }

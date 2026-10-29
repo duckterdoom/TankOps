@@ -27,6 +27,11 @@ import java.util.concurrent.atomic.AtomicReference;
 public class GameStateStore implements MessageListener {
 
     private final AtomicReference<SnapshotMessage> latestSnapshot = new AtomicReference<>(null);
+    private final RenderInterpolator renderInterpolator = new RenderInterpolator();
+
+    public SnapshotMessage getRenderSnapshot() {
+        return renderInterpolator.sample(getAssignedPlayerId());
+    }
     private volatile JoinResponseMessage joinInfo = null;
     private final AtomicReference<String> joinError = new AtomicReference<>();
     private volatile GameOverMessage gameOverState = null;
@@ -74,6 +79,7 @@ public class GameStateStore implements MessageListener {
             }
             case SnapshotMessage snap -> {
                 latestSnapshot.set(snap);
+                renderInterpolator.push(snap);
                 processExplosionDetection(snap.tanks(), snap.bullets());
                 // Phát âm thanh server gửi kèm snapshot (mỗi tick chỉ phát 1 lần)
                 for (String sound : snap.sounds()) {
@@ -95,6 +101,7 @@ public class GameStateStore implements MessageListener {
             }
             case JoinResponseMessage join -> {
                 if (join.success()) {
+                    renderInterpolator.clear();
                     joinInfo = join;
                     inGame   = false;
                     gameOverState = null;
@@ -123,6 +130,7 @@ public class GameStateStore implements MessageListener {
 
     @Override
     public void onConnected(String host, int port) {
+        renderInterpolator.clear();
         latestSnapshot.set(null);
         joinInfo      = null;
         gameOverState = null;
@@ -150,6 +158,7 @@ public class GameStateStore implements MessageListener {
     }
 
     public void clearRoom() {
+        renderInterpolator.clear();
         joinInfo = null;
         joinError.set(null);
         inGame = false;
@@ -211,6 +220,7 @@ public class GameStateStore implements MessageListener {
      * Gọi khi rời màn hình kết quả (về lobby/menu): xóa trạng thái của ván cũ và của phòng cũ.
      */
     public void resetAfterGame() {
+        renderInterpolator.clear();
         gameOverState = null;
         gameOverPending.set(false);
         inGame = false;

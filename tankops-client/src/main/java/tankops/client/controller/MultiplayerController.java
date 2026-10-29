@@ -17,6 +17,9 @@ public class MultiplayerController {
 
     private Timer inputTimer;
     private boolean isRunning = false;
+    private Direction lastDirection;
+    private boolean lastShooting;
+    private long lastSentAt;
 
     public MultiplayerController(InputHandler inputHandler, GameStateStore gameStateStore) {
         this.inputHandler = inputHandler;
@@ -31,23 +34,29 @@ public class MultiplayerController {
         if (isRunning) return;
         isRunning = true;
 
-        // Vòng lặp 16ms (~60hz) đọc phím bấm và gửi InputMessage
-        inputTimer = new Timer(16, e -> {
-            if (!networkClient.isConnected() || !gameStateStore.isInGame()) return;
-
-            String playerId = gameStateStore.getAssignedPlayerId();
-            if (playerId == null) return;
-
-            int currentTick = gameStateStore.getCurrentTick();
-            Direction moveDir = inputHandler.getMovementDirection();
-            boolean isShooting = inputHandler.isShooting();
-
-            // Khớp chính xác record InputMessage(playerId, tick, direction, shooting)
-            InputMessage inputMsg = new InputMessage(playerId, currentTick, moveDir, isShooting);
-            networkClient.sendMessage(inputMsg);
-        });
-
+        lastSentAt = 0;
+        inputHandler.setOnInputChanged(() -> sendInput(false));
+        // Changes are sent immediately; held fire is sampled at the server's default 30 Hz.
+        inputTimer = new Timer(33, e -> sendInput(true));
         inputTimer.start();
+        sendInput(false);
+    }
+
+    private void sendInput(boolean pulse) {
+        if (!isRunning || !networkClient.isConnected() || !gameStateStore.isInGame()) return;
+        String playerId = gameStateStore.getAssignedPlayerId();
+        if (playerId == null) return;
+        Direction direction = inputHandler.getMovementDirection();
+        boolean shooting = inputHandler.isShooting();
+        long now = System.nanoTime();
+        boolean changed = direction != lastDirection || shooting != lastShooting;
+        if (!changed && lastSentAt != 0 && !(pulse && shooting)
+                && now - lastSentAt < 100_000_000L) return;
+        if (networkClient.sendMessage(new InputMessage(playerId, gameStateStore.getCurrentTick(), direction, shooting))) {
+            lastDirection = direction;
+            lastShooting = shooting;
+            lastSentAt = now;
+        }
     }
 
     /**
@@ -55,6 +64,7 @@ public class MultiplayerController {
      */
     public void stop() {
         isRunning = false;
+        inputHandler.setOnInputChanged(null);
         if (inputTimer != null) {
             inputTimer.stop();
         }
