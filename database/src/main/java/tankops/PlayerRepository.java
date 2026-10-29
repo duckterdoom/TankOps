@@ -4,46 +4,57 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 
-import java.util.Optional;
+import java.util.ArrayList;
 
 public class PlayerRepository {
+
     private final MongoCollection<Document> playerCollection;
 
     public PlayerRepository(MongoDatabaseManager dbManager) {
-        // MongoDB sẽ tự động tạo collection "players" nếu chưa có khi ghi dữ liệu
-        this.playerCollection = dbManager.getDatabase().getCollection("players");
+        playerCollection = dbManager.getDatabase().getCollection("players");
     }
 
-    // 1. Thêm người chơi mới (CREATE)
-    public void createPlayer(String username, String passwordHash) {
-        Document newPlayer = new Document("username", username)
-                .append("password_hash", passwordHash)
-                .append("total_score", 0)
-                .append("matches_played", 0)
-                .append("wins", 0);
+    // 1. Tạo người chơi mới (Chỉ lưu username và danh sách match_ids)
+    public void createPlayer(String username) {
+        Document player = new Document("username", username)
+                .append("match_ids", new ArrayList<ObjectId>());
 
-        playerCollection.insertOne(newPlayer);
-        System.out.println("Đã thêm người chơi lên MongoDB: " + username);
+        playerCollection.insertOne(player);
+        System.out.println("Đã thêm người chơi: " + username);
     }
 
-    // 2. Tìm kiếm theo username (READ)
-    public Optional<Document> findByUsername(String username) {
-        Document player = playerCollection.find(Filters.eq("username", username)).first();
-        return Optional.ofNullable(player);
+    // 2. Tìm người chơi theo username
+    public Document findByUsername(String username) {
+        return playerCollection.find(Filters.eq("username", username)).first();
     }
 
-    // 3. Cập nhật điểm số sau trận đấu (UPDATE)
-    public void updateScore(String username, int scoreToAdd, boolean isWinner) {
-        int winIncrement = isWinner ? 1 : 0;
+    // 3. Đăng ký tài khoản (Chỉ kiểm tra trùng tên username)
+    public boolean registerPlayer(String username) {
+        Document existingPlayer = findByUsername(username);
+
+        if (existingPlayer != null) {
+            System.out.println("❌ Tên tài khoản '" + username + "' đã bị trùng!");
+            return false;
+        }
+
+        createPlayer(username);
+        System.out.println("✅ Đăng ký tài khoản thành công: " + username);
+        return true;
+    }
+
+    // 4. Thêm ID trận đấu vào danh sách match_ids của người chơi
+    public void addMatchId(String username, ObjectId matchId) {
         playerCollection.updateOne(
                 Filters.eq("username", username),
-                Updates.combine(
-                        Updates.inc("total_score", scoreToAdd),
-                        Updates.inc("matches_played", 1),
-                        Updates.inc("wins", winIncrement)
-                )
+                Updates.push("match_ids", matchId)
         );
-        System.out.println("Đã cập nhật chỉ số cho: " + username);
+    }
+
+    // 5. Xóa người chơi theo username (dùng dọn dẹp khi test)
+    public void deletePlayer(String username) {
+        playerCollection.deleteOne(Filters.eq("username", username));
+        System.out.println("Đã xóa người chơi: " + username);
     }
 }
