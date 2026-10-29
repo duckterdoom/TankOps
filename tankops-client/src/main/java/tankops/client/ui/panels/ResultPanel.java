@@ -1,7 +1,12 @@
 package tankops.client.ui.panels;
 
+import tankops.client.state.GameStateStore;
 import tankops.client.ui.MainFrame;
 import tankops.client.ui.ScreenState;
+import tankops.common.engine.GameState;
+import tankops.common.model.tank.PlayerTank;
+import tankops.common.model.tank.Tank;
+import tankops.common.net.game.GameOverMessage;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -9,49 +14,47 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import java.awt.*;
+import java.util.Map;
 
 public class ResultPanel extends JPanel {
     private final JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 25, 10));
     private final MainFrame mainFrame;
+    private GameStateStore currentStore; // kho trạng thái của ván vừa chơi (để rời phòng khi bấm nút)
+    private final DefaultTableModel tableModel;
+    private final JLabel titleLabel;
+    private final JLabel subTitleLabel;
 
     public ResultPanel(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
-        setBackground(new Color(25, 25,30));
+        setBackground(new Color(25, 25, 30));
         setLayout(new BorderLayout(20, 20));
         setBorder(new EmptyBorder(30, 40, 30, 40));
 
         JPanel headerPanel = new JPanel(new GridLayout(2, 1, 0, 5));
         headerPanel.setOpaque(false);
 
-        JLabel title = new JLabel("MATCH FINISHED", SwingConstants.CENTER);
-        title.setFont(new Font("Impact", Font.PLAIN, 42));
-        title.setForeground(new Color(240, 190, 40));
+        titleLabel = new JLabel("MATCH FINISHED", SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Impact", Font.PLAIN, 42));
+        titleLabel.setForeground(new Color(240, 190, 40));
 
-        JLabel subTitle = new JLabel("RESULT & STATUS", SwingConstants.CENTER);
-        subTitle.setFont(new Font("Arial", Font.BOLD, 14));
-        subTitle.setForeground(Color.LIGHT_GRAY);
+        subTitleLabel = new JLabel("RESULT & STATUS", SwingConstants.CENTER);
+        subTitleLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        subTitleLabel.setForeground(Color.LIGHT_GRAY);
 
-        headerPanel.add(title);
-        headerPanel.add(subTitle);
+        headerPanel.add(titleLabel);
+        headerPanel.add(subTitleLabel);
         add(headerPanel, BorderLayout.NORTH);
 
         String[] columnNames = {"RANK", "PLAYER", "KILLS", "DEATHS", "SCORE", "STATUS"};
-        Object[][] data = {
-                {"#1", "Player1", 7, 1, 1500, "MVP"},
-                {"#2", "TankMaster", 4, 3, 950, "RUNNER-UP"},
-                {"#3", "Bot_Alpha", 2, 4, 500, "DEFEATED"},
-                {"#4", "Bot_Bravo", 1, 5, 250, "DEFEATED"},
-                {"#5", "ShadowTank", 0, 5, 100, "DEFEATED"}
-        };
 
-        DefaultTableModel model = new DefaultTableModel(data, columnNames) {
+        tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
-        JTable table = new JTable(model);
+        JTable table = new JTable(tableModel);
         styleResultTable(table);
 
         JScrollPane scrollPane = new JScrollPane(table);
@@ -66,19 +69,191 @@ public class ResultPanel extends JPanel {
         setupButtons(false);
     }
 
+    /**
+     * 🟢 CẬP NHẬT THÔNG TIN CHO SINGLE-PLAYER
+     */
+    /**
+     * 🟢 CẬP NHẬT THÔNG TIN CHO SINGLE-PLAYER (Đã sửa lỗi Deaths & Score)
+     */
+    public void updateSinglePlayerResults(GameState gameState, String localPlayerId, int lastKnownScore, int killCount, int deathCount) {
+        setupButtons(false);
+        tableModel.setRowCount(0);
+
+        if (gameState == null) {
+            titleLabel.setText("GAME OVER");
+            titleLabel.setForeground(new Color(240, 190, 40));
+            tableModel.addRow(new Object[]{"#1", "PLAYER 1", 0, 0, 0, "FINISHED"});
+            return;
+        }
+
+        PlayerTank player = null;
+
+        // Duyệt danh sách xe tăng trong GameState
+        if (gameState.getTanks() != null) {
+            for (Tank tank : gameState.getTanks()) {
+                if (tank instanceof PlayerTank p && tank.getId().equals(localPlayerId)) {
+                    player = p;
+                    break;
+                }
+            }
+        }
+
+        int score = lastKnownScore;
+        boolean isVictory = player != null && !player.isDestroyed();
+
+        if (isVictory) {
+            titleLabel.setText("VICTORY!");
+            titleLabel.setForeground(new Color(50, 205, 50));
+        } else {
+            titleLabel.setText("DEFEAT");
+            titleLabel.setForeground(new Color(220, 50, 50));
+        }
+
+        String status = isVictory ? "VICTORIOUS" : "DESTROYED";
+
+        tableModel.addRow(new Object[]{
+                "#1",
+                "PLAYER 1 (YOU)",
+                killCount,
+                deathCount,
+                score,
+                status
+        });
+    }
+
+    // Helper lấy số mạng của PlayerTank bằng reflection
+    private int getPlayerLives(PlayerTank player) {
+        try {
+            var method = PlayerTank.class.getMethod("getLives");
+            return (int) method.invoke(player);
+        } catch (Exception e1) {
+            try {
+                var field = PlayerTank.class.getDeclaredField("lives");
+                field.setAccessible(true);
+                return field.getInt(player);
+            } catch (Exception e2) {
+                return player.isDestroyed() ? 0 : 1;
+            }
+        }
+    }
+
+    public void updateResults(GameStateStore gameStateStore, boolean isMultiplayer) {
+        this.currentStore = gameStateStore;
+        setupButtons(isMultiplayer);
+        tableModel.setRowCount(0);
+
+        if (isMultiplayer && gameStateStore != null) {
+            GameOverMessage gameOver = gameStateStore.getGameOverState();
+            String localPlayerId = gameStateStore.getAssignedPlayerId();
+
+            if (gameOver != null && gameOver.scores() != null && !gameOver.scores().isEmpty()) {
+                Map<String, Integer> scores = gameOver.scores();
+                String winnerId = gameOver.winnerId();
+
+                boolean isVictory = (winnerId != null && localPlayerId != null && winnerId.equalsIgnoreCase(localPlayerId));
+                if (isVictory) {
+                    titleLabel.setText("VICTORY!");
+                    titleLabel.setForeground(new Color(50, 205, 50));
+                } else {
+                    titleLabel.setText("DEFEAT");
+                    titleLabel.setForeground(new Color(220, 50, 50));
+                }
+
+                java.util.List<Map.Entry<String, Integer>> sortedList = new java.util.ArrayList<>();
+                Map.Entry<String, Integer> winnerEntry = null;
+
+                for (Map.Entry<String, Integer> entry : scores.entrySet()) {
+                    if (winnerId != null && entry.getKey().equalsIgnoreCase(winnerId)) {
+                        winnerEntry = entry;
+                    } else {
+                        sortedList.add(entry);
+                    }
+                }
+
+                // Sắp xếp danh sách người thua theo Score giảm dần
+                sortedList.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+
+                // Đưa Người thắng (Winner) lên vị trí đầu tiên (Index 0) nếu có
+                if (winnerEntry != null) {
+                    sortedList.add(0, winnerEntry);
+                }
+
+                //ĐƯA DỮ LIỆU ĐÃ SẮP XẾP LÊN BẢNG RESULT
+                int rank = 1;
+                for (Map.Entry<String, Integer> entry : sortedList) {
+                    String pId = entry.getKey();
+                    int score = entry.getValue();
+
+                    boolean isWinner = (winnerId != null && winnerId.equalsIgnoreCase(pId));
+                    String status = isWinner ? "MVP / WINNER" : "DEFEATED";
+
+                    boolean isMe = (localPlayerId != null && localPlayerId.equalsIgnoreCase(pId));
+
+                    String displayName = pId;
+                    if (isMe) {
+                        displayName += " (YOU)";
+                    }
+
+                    // Số kill/death do SERVER đếm. Nếu server cũ không gửi thì mới dùng cách ước lượng.
+                    String killsText = gameOver.kills().containsKey(pId)
+                            ? String.valueOf(gameOver.kills().get(pId))
+                            : String.valueOf(score / 100);
+                    String deathsText = gameOver.deaths().containsKey(pId)
+                            ? String.valueOf(gameOver.deaths().get(pId))
+                            : (isWinner ? "0" : "1");
+
+                    tableModel.addRow(new Object[]{
+                            "#" + rank++,
+                            displayName,
+                            killsText,
+                            deathsText,
+                            score,
+                            status
+                    });
+                }
+            } else {
+                tableModel.addRow(new Object[]{"#1", "Waiting for server...", 0, 0, 0, "FINISHED"});
+            }
+        } else {
+            titleLabel.setText("GAME OVER");
+            titleLabel.setForeground(new Color(240, 190, 40));
+            tableModel.addRow(new Object[]{"#1", "Player 1", 5, 0, 1000, "COMPLETED"});
+        }
+    }
+
+    /** Báo server mình rời phòng rồi xóa trạng thái ván cũ, để lần vào phòng sau bắt đầu từ phòng chờ. */
+    private void leaveRoomAndResetState() {
+        GameStateStore store = currentStore;
+        if (store == null) {
+            return;
+        }
+        String roomId = store.getCurrentRoomId();
+        String playerId = store.getAssignedPlayerId();
+        if (roomId != null && playerId != null) {
+            tankops.client.net.NetworkClient.getInstance()
+                    .sendMessage(new tankops.common.net.lobby.LeaveRoomMessage(roomId, playerId));
+        }
+        store.resetAfterGame();
+    }
+
     private void setupButtons(boolean isMultiplayer) {
         actionPanel.removeAll();
 
         if (isMultiplayer) {
             JButton lobbyBtn = createStyleButton("BACK TO LOBBY", new Color(70, 130, 180));
             JButton menuBtn = createStyleButton("MAIN MENU", new Color(178, 34, 34));
-            lobbyBtn.addActionListener(e -> mainFrame.showScreen(ScreenState.LOBBY));
-            menuBtn.addActionListener(e -> mainFrame.showScreen(ScreenState.MODE_SELECT));
+            lobbyBtn.addActionListener(e -> {
+                leaveRoomAndResetState();
+                mainFrame.showScreen(ScreenState.LOBBY);
+            });
+            menuBtn.addActionListener(e -> {
+                leaveRoomAndResetState();
+                mainFrame.showScreen(ScreenState.MODE_SELECT);
+            });
 
             actionPanel.add(lobbyBtn);
             actionPanel.add(menuBtn);
         } else {
-
             JButton playAgainBtn = createStyleButton("PLAY AGAIN", new Color(46, 139, 87));
             JButton menuBtn = createStyleButton("MAIN MENU", new Color(178, 34, 34));
             playAgainBtn.addActionListener(e -> mainFrame.showScreen(ScreenState.GAME));
@@ -112,6 +287,16 @@ public class ResultPanel extends JPanel {
         for (int i = 0; i < table.getColumnCount(); i++) {
             table.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
         }
+    }
+
+    private void leaveMatch(ScreenState destination) {
+        GameStateStore store = mainFrame.getGameStateStore();
+        if (store.getCurrentRoomId() != null) {
+            tankops.client.net.NetworkClient.getInstance().sendMessage(
+                    new tankops.common.net.lobby.LeaveRoomMessage(store.getCurrentRoomId(), store.getAssignedPlayerId()));
+        }
+        store.clearRoom();
+        mainFrame.showScreen(destination);
     }
 
     private JButton createStyleButton(String text, Color bgColor) {

@@ -1,6 +1,7 @@
 package tankops.common.model.powerups;
 
 
+import tankops.common.engine.GameState;
 import tankops.common.model.common.Entity;
 import tankops.common.model.common.Vector2D;
 import tankops.common.model.tank.PlayerTank;
@@ -13,6 +14,6 @@ public abstract class PowerUp extends Entity {
         super(id, position, POWERUP_SIZE, POWERUP_SIZE);
     }
 
-    public abstract void applyEffect(PlayerTank player);
+    public abstract void applyEffect(PlayerTank player, GameState state);
 }
 

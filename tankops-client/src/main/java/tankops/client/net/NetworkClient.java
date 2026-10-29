@@ -3,9 +3,9 @@ package tankops.client.net;
 import tankops.common.net.Message;
 import tankops.common.net.codec.MessageCodec;
 import tankops.common.net.codec.ProtocolException;
+import tankops.common.net.codec.MessageWriter;
 import tankops.common.net.system.PingMessage;
 import tankops.common.net.system.PongMessage;
-import tankops.common.net.system.DisconnectMessage;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Luồng hoạt động:
  *   Main thread → connect() → tạo socket + luồng receiver
  *   Receiver thread → MessageCodec.readMessage() → notifyListeners()
- *   Any thread → sendMessage() → MessageCodec.writeMessage() (synchronized)
+ *   Any thread → sendMessage() → bounded queue → dedicated socket writer
  *
  * Observer pattern: các component (GameStateStore, LobbyPanel) đăng ký
  * MessageListener để nhận sự kiện mạng không đồng bộ.
@@ -58,7 +58,22 @@ public final class NetworkClient {
     private volatile Socket         socket;
     private volatile DataInputStream  socketIn;
     private volatile DataOutputStream socketOut;
+    private volatile MessageWriter writer;
     private final AtomicBoolean     connected   = new AtomicBoolean(false);
+    private volatile long roundTripMillis = -1;
+    private volatile long pendingPing;
+    private long lastPing;
+
+    public long getRoundTripMillis() { return roundTripMillis; }
+
+    /** Called by the EDT input timer; measures the actual game tunnel including writer delay. */
+    public void requestLatencySample() {
+        if (!connected.get()) return;
+        long now = System.nanoTime();
+        if (lastPing != 0 && now - lastPing < 1_000_000_000L) return;
+        pendingPing = now;
+        if (sendMessage(new PingMessage(now))) lastPing = now;
+    }
 
     /** Timeout kết nối TCP: 5 giây theo đặc tả kỹ thuật. */
     private static final int CONNECT_TIMEOUT_MS = 5_000;
@@ -106,6 +121,12 @@ public final class NetworkClient {
             this.socketIn  = new DataInputStream(s.getInputStream());
             this.socketOut = new DataOutputStream(s.getOutputStream());
             connected.set(true);
+            roundTripMillis = -1;
+            pendingPing = 0;
+            lastPing = 0;
+            this.writer = new MessageWriter(socketOut, 32, () -> {
+                try { s.close(); } catch (IOException ignored) { }
+            }, "NetworkClient-Writer");
 
             startReceiverThread(host, port);
             notifyConnected(host, port);
@@ -123,55 +144,30 @@ public final class NetworkClient {
 
     /**
      * Gửi một Message tới server.
-     * Thread-safe: synchronized trên socketOut để tránh xen lẫn dữ liệu.
+     * Xếp hàng gửi trên writer riêng, không chặn EDT khi mạng chậm.
      *
      * @param message bản tin cần gửi (không null)
-     * @return true nếu gửi thành công, false nếu chưa kết nối hoặc lỗi I/O
+     * @return true nếu đã xếp hàng; false nếu chưa kết nối hoặc hàng đợi đầy
      */
     public boolean sendMessage(Message message) {
         if (!connected.get()) {
             System.err.println("[NetworkClient] Chưa kết nối, không thể gửi: " + message);
             return false;
         }
-        DataOutputStream out = socketOut;
-        if (out == null) return false;
-
-        try {
-            synchronized (out) {
-                MessageCodec.writeMessage(out, message);
-            }
-            return true;
-        } catch (ProtocolException e) {
-            System.err.println("[NetworkClient] Lỗi mã hóa message: " + e.getMessage());
-            return false;
-        } catch (IOException e) {
-            System.err.println("[NetworkClient] Lỗi gửi message: " + e.getMessage());
-            cleanup("Lỗi I/O khi gửi: " + e.getMessage());
-            return false;
-        }
+        MessageWriter current = writer;
+        return current != null && current.send(message);
     }
 
     /**
      * Ngắt kết nối khỏi server.
-     * Nếu đang kết nối, gửi DisconnectMessage trước khi đóng socket.
+     * Đóng socket ngay để không chặn giao diện khi mạng chậm.
      */
     public void disconnect() {
         if (!connected.getAndSet(false)) {
             return; // Đã ngắt rồi
         }
 
-        // Cố gắng thông báo server trước khi đóng socket
-        DataOutputStream out = socketOut;
-        if (out != null) {
-            try {
-                synchronized (out) {
-                    MessageCodec.writeMessage(out, new DisconnectMessage("", "CLIENT_QUIT"));
-                }
-            } catch (Exception ignored) {
-                // Bỏ qua lỗi khi đang đóng
-            }
-        }
-
+        // Closing TCP also informs the server, without waiting for a blocked writer on EDT.
         closeSocket();
         System.out.println("[NetworkClient] Đã ngắt kết nối.");
     }
@@ -211,11 +207,13 @@ public final class NetworkClient {
     // =========================================================================
 
     private void startReceiverThread(String host, int port) {
+        Socket sessionSocket = socket;
+        DataInputStream sessionInput = socketIn;
         Thread t = new Thread(() -> {
             System.out.println("[NetworkClient-Receiver] Bắt đầu lắng nghe từ " + host + ":" + port);
-            DataInputStream in = socketIn;
+            DataInputStream in = sessionInput;
 
-            while (connected.get() && in != null) {
+            while (connected.get() && socket == sessionSocket && in != null) {
                 try {
                     Message msg = MessageCodec.readMessage(in);
                     handleIncomingMessage(msg);
@@ -243,7 +241,7 @@ public final class NetworkClient {
             }
 
             String reason = connected.get() ? "Mất kết nối từ server" : "Ngắt kết nối chủ động";
-            cleanup(reason);
+            if (socket == sessionSocket) cleanup(reason);
             System.out.println("[NetworkClient-Receiver] Dừng. Lý do: " + reason);
 
         }, "NetworkClient-Receiver");
@@ -254,6 +252,10 @@ public final class NetworkClient {
     }
 
     private void handleIncomingMessage(Message message) {
+        if (message instanceof PongMessage pong && pong.timestamp() == pendingPing) {
+            roundTripMillis = Math.max(0, (System.nanoTime() - pong.timestamp()) / 1_000_000L);
+            return;
+        }
         if (message instanceof PingMessage ping) {
             sendMessage(new PongMessage(ping.timestamp()));
             return;
@@ -309,6 +311,9 @@ public final class NetworkClient {
     }
 
     private void closeSocket() {
+        MessageWriter current = writer;
+        writer = null;
+        if (current != null) current.close();
         Socket s = socket;
         if (s != null && !s.isClosed()) {
             try {

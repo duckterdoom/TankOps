@@ -11,20 +11,25 @@ import tankops.common.engine.GameState;
 import tankops.common.map.GameMap;
 import tankops.common.model.common.Bullet;
 import tankops.common.model.common.Direction;
+import tankops.common.model.environment.BrickWall;
+import tankops.common.model.environment.Environment;
+import tankops.common.model.environment.SteelWall;
+import tankops.common.model.powerups.PowerUp;
 import tankops.common.model.tank.PlayerTank;
 import tankops.common.model.tank.Tank;
 import tankops.common.net.Message;
 import tankops.common.net.game.BulletSnapshot;
+import tankops.common.net.game.EnvironmentSnapshot;
 import tankops.common.net.game.GameOverMessage;
+import tankops.common.net.game.PowerUpSnapshot;
 import tankops.common.net.game.SnapshotMessage;
 import tankops.common.net.game.TankSnapshot;
+import tankops.common.net.lobby.RoomStateMessage;
 import tankops.server.net.ClientSession;
 
 /**
- * Một phòng chơi: danh sách người chơi (T10) + vòng tick (T15) + vòng đời và điểm số (T21).
- *
- * QUY TẮC VÀNG (single-writer): chỉ có thread của TickLoop được gọi GameEngine.
- * Các thread socket chỉ BỎ LỆNH vào hàng đợi (submitMove) hoặc bật cờ (requestFinish).
+ * (single-writer): chỉ có thread của TickLoop được gọi GameEngine.
+ * Các thread socket chỉ BỎ LỆNH vào hàng đợi (submitMove, submitShoot) hoặc bật cờ (requestFinish).
  */
 public class GameRoom {
 
@@ -36,21 +41,28 @@ public class GameRoom {
     private final String id;
     private final int maxPlayers;
     private final List<ClientSession> players = new ArrayList<>();
+    private final java.util.Set<String> readyPlayers = new java.util.HashSet<>();
 
-    // ---- T21: vòng đời + điểm ----
+    //  vòng đời
     // volatile: thread tick đọc được ngay giá trị mới nhất. Việc GHI luôn nằm trong synchronized.
     private volatile RoomState state = RoomState.LOBBY;
     private volatile boolean finishRequested = false; // thread khác bật cờ này để xin kết thúc ván
     private final Map<String, Integer> scores = new LinkedHashMap<>(); // playerId -> điểm
+    private final Map<String, Integer> kills = new LinkedHashMap<>();  // playerId -> số lần hạ xe người khác
+    private final Map<String, Integer> deaths = new LinkedHashMap<>(); // playerId -> số lần bị hạ
+    private final Map<String, Boolean> aliveLastTick = new LinkedHashMap<>(); // chỉ thread tick đụng vào
+    private final List<String> pendingSounds = new ArrayList<>(); // âm thanh chờ gửi, chỉ thread tick đụng vào
     private String winnerId = null; // null = chưa xong hoặc hòa
 
-    // ---- T15: tick ----
-    private final ConcurrentLinkedQueue<MoveCommand> inputQueue = new ConcurrentLinkedQueue<>();
+    // tick
+    private final ConcurrentLinkedQueue<InputCommand> inputQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<String> departedPlayers = new ConcurrentLinkedQueue<>();
     private GameEngine engine;          // chỉ thread tick được đụng vào
     private TickLoop tickLoop;
     private volatile int tickCount = 0;
 
-    private record MoveCommand(String playerId, Direction direction) { }
+    // Một lệnh của người chơi: hoặc đổi hướng đi (shoot = false), hoặc bắn (shoot = true)
+    private record InputCommand(String playerId, Direction direction, boolean shoot) { }
 
     public GameRoom(String id, int maxPlayers) {
         this.id = id;
@@ -61,11 +73,33 @@ public class GameRoom {
         return id;
     }
 
-    // ================= Danh sách người chơi (T10) =================
+    public int getMaxPlayers() {
+        return maxPlayers;
+    }
+
+    //  Danh sách người chơi
 
     // Chỉ cho vào khi phòng còn ở LOBBY. Phòng đã PLAYING/FINISHED thì từ chối.
     // synchronized: "kiểm tra trạng thái + kiểm tra chỗ + thêm người" là một khối không bị chen ngang.
+    /**
+     * Ván đã kết thúc (FINISHED) thì đưa phòng về phòng chờ (LOBBY) để chơi lại: xóa READY, bỏ engine cũ.
+     * Người chơi vẫn ở lại trong phòng. Phòng chưa kết thúc thì không làm gì.
+     */
+    public synchronized void resetToLobbyIfFinished() {
+        if (state != RoomState.FINISHED) {
+            return;
+        }
+        readyPlayers.clear();
+        inputQueue.clear();
+        engine = null;
+        winnerId = null;
+        finishRequested = false;
+        tickCount = 0;
+        state = RoomState.LOBBY;
+    }
+
     public synchronized void addPlayer(ClientSession player) throws RoomFullException {
+        resetToLobbyIfFinished(); // vào phòng vừa chơi xong thì thấy phòng chờ, không phải phòng "đã kết thúc"
         if (state != RoomState.LOBBY) {
             throw new IllegalStateException("Phòng " + id + " đã bắt đầu, không thể vào");
         }
@@ -78,11 +112,17 @@ public class GameRoom {
 
     public synchronized void removePlayer(ClientSession player) {
         players.remove(player);
+        readyPlayers.remove(player.getPlayerName()); // Xóa trạng thái ready khi thoát
         if (player.getCurrentRoom() == this) {
             player.setCurrentRoom(null);
         }
 
+        if (state == RoomState.FINISHED) {
+            resetToLobbyIfFinished(); // có người rời sau khi hết ván: phòng quay về trạng thái chờ
+        }
+
         if (state == RoomState.PLAYING) {
+            departedPlayers.add(player.getPlayerName());
             if (players.isEmpty()) {
                 stopGame();              // không còn ai: tắt vòng tick, khỏi chạy vô ích
             } else if (players.size() < MIN_PLAYERS_TO_START) {
@@ -99,13 +139,13 @@ public class GameRoom {
         return players.isEmpty();
     }
 
-    // ================= Vòng đời (T21) =================
+    //  Vòng đời
 
     public RoomState getState() {
         return state;
     }
 
-    /** LOBBY -> PLAYING: tạo engine, đặt xe cho người chơi thật (không bot), chạy vòng tick. */
+    /** LOBBY -> PLAYING: tạo engine, đặt xe cho người chơi thật, chạy vòng tick. */
     public synchronized void startGame(GameMap map, int tickRate) {
         if (state != RoomState.LOBBY) {
             throw new IllegalStateException("Phòng " + id + " không ở trạng thái LOBBY");
@@ -113,22 +153,39 @@ public class GameRoom {
         if (players.size() < MIN_PLAYERS_TO_START) {
             throw new IllegalStateException("Cần ít nhất " + MIN_PLAYERS_TO_START + " người để bắt đầu");
         }
+        if (!areAllMembersReady()) {
+            throw new IllegalStateException("Tất cả người chơi khác phải READY trước khi bắt đầu!");
+        }
 
         engine = new GameEngine(map);
+        // Engine báo "có người hạ xe" -> cộng điểm cho người bắn. (Hàm này chạy trên thread tick)
+        engine.setOnKillCallback(this::addKill);
+        // Engine báo âm thanh (bắn, nổ, ăn vật phẩm...) -> gom lại, gửi kèm snapshot kế tiếp. (Chạy trên thread tick)
+        engine.setOnSoundCallback(pendingSounds::add);
 
         List<String> ids = new ArrayList<>();
         for (ClientSession p : players) {
-            ids.add(p.getPlayerId());
-            scores.put(p.getPlayerId(), 0); // ai cũng bắt đầu với 0 điểm
+            String name = p.getPlayerName();
+            ids.add(name);
+            scores.put(name, 0);
+            kills.put(name, 0);
+            deaths.put(name, 0);
         }
         engine.spawnPlayers(ids, map.getPlayerSpawnPoints());
 
         finishRequested = false;
         winnerId = null;
+        aliveLastTick.clear();
+        pendingSounds.clear();
+        for (String id : ids) {
+            aliveLastTick.put(id, true);
+        }
         state = RoomState.PLAYING;
 
         tickLoop = new TickLoop(tickRate);
         tickLoop.start(this::tick);
+        // Gửi 1 Snapshot ban đầu để các Client biết trận đấu đã khởi chạy
+        broadcast(buildBinarySnapshot());
     }
 
     /** Tắt vòng tick. Nếu đang PLAYING thì coi như ván đã FINISHED. */
@@ -143,25 +200,36 @@ public class GameRoom {
     }
 
     /**
-     * Thread socket (hoặc ai cũng được) gọi hàm này để xin kết thúc ván.
+     * Thread socket gọi hàm này để xin kết thúc ván.
      * Chỉ bật cờ. Thread tick sẽ tự thấy và kết thúc, vì chỉ thread tick được đọc engine.
      */
     public void requestFinish() {
         finishRequested = true;
     }
 
-    // ================= Điểm số (T21) =================
+    //  Điểm số
 
-    /** Cộng điểm cho 1 người. (Sau này M3 báo "A hạ B" thì gọi addKill.) */
+    /** Cộng điểm cho 1 người.  */
     public synchronized void addScore(String playerId, int points) {
         scores.merge(playerId, points, Integer::sum);
     }
 
     public void addKill(String killerId) {
+        synchronized (this) {
+            kills.merge(killerId, 1, Integer::sum);
+        }
         addScore(killerId, KILL_POINTS);
     }
 
-    // Trả về BẢN SAO để bên ngoài không sửa trực tiếp vào bảng điểm thật
+    // Trả về bản sao để bên ngoài không sửa trực tiếp vào bảng điểm thật
+    public synchronized Map<String, Integer> getKills() {
+        return new LinkedHashMap<>(kills);
+    }
+
+    public synchronized Map<String, Integer> getDeaths() {
+        return new LinkedHashMap<>(deaths);
+    }
+
     public synchronized Map<String, Integer> getScores() {
         return new LinkedHashMap<>(scores);
     }
@@ -170,11 +238,16 @@ public class GameRoom {
         return winnerId;
     }
 
-    // ================= Tick (T15) =================
+    // Tick
 
     /** Thread socket gọi khi nhận lệnh của client. Chỉ bỏ vào hàng đợi, KHÔNG đụng engine. */
     public void submitMove(String playerId, Direction direction) {
-        inputQueue.add(new MoveCommand(playerId, direction));
+        inputQueue.add(new InputCommand(playerId, direction, false));
+    }
+
+    /** Thread socket gọi khi client bấm bắn. Cũng chỉ xếp hàng, thread tick mới gọi engine. */
+    public void submitShoot(String playerId) {
+        inputQueue.add(new InputCommand(playerId, null, true));
     }
 
     public int getTickCount() {
@@ -192,13 +265,23 @@ public class GameRoom {
             return; // ván đã kết thúc, tick còn sót lại thì bỏ qua
         }
 
-        MoveCommand cmd;
+        InputCommand cmd;
+        String departed;
+        while ((departed = departedPlayers.poll()) != null) {
+            String playerName = departed;
+            engine.getGameState().getTanks().removeIf(tank -> tank.getId().equals(playerName));
+        }
         while ((cmd = inputQueue.poll()) != null) {
-            engine.handleMoveEvent(cmd.playerId(), cmd.direction());
+            if (cmd.shoot()) {
+                engine.handleShootEvent(cmd.playerId());
+            } else {
+                engine.handleMoveEvent(cmd.playerId(), cmd.direction());
+            }
         }
 
         engine.update();
         tickCount++;
+        countDeaths();
 
         if (isGameOver()) {
             finishGame();
@@ -206,10 +289,32 @@ public class GameRoom {
         }
 
         broadcast(buildBinarySnapshot());
-        broadcast(buildSnapshot());
     }
 
     // Hết ván khi: có người xin kết thúc, hoặc engine báo hết, hoặc chỉ còn tối đa 1 xe sống
+    /**
+     * Đếm số lần mỗi người chơi bị hạ: mỗi lần xe chuyển từ "còn sống" sang "không còn" thì tính 1 lần chết.
+     * Chỉ thread tick gọi (cùng thread với engine) nên đọc engine an toàn.
+     */
+    private void countDeaths() {
+        Map<String, Boolean> aliveNow = new LinkedHashMap<>();
+        for (Tank t : engine.getGameState().getTanks()) {
+            if (t instanceof PlayerTank && !t.isDestroyed()) {
+                aliveNow.put(t.getId(), true);
+            }
+        }
+        for (Map.Entry<String, Boolean> e : aliveLastTick.entrySet()) {
+            boolean wasAlive = e.getValue();
+            boolean isAlive = aliveNow.containsKey(e.getKey());
+            if (wasAlive && !isAlive) {
+                synchronized (this) {
+                    deaths.merge(e.getKey(), 1, Integer::sum);
+                }
+            }
+            e.setValue(isAlive);
+        }
+    }
+
     private boolean isGameOver() {
         return finishRequested
                 || engine.getGameState().isGameOver()
@@ -228,7 +333,6 @@ public class GameRoom {
 
     /** PLAYING -> FINISHED. Chạy trên thread tick. */
     private void finishGame() {
-        String message;
         GameOverMessage gameOverMsg;
         synchronized (this) {
             if (state != RoomState.PLAYING) {
@@ -240,11 +344,9 @@ public class GameRoom {
                 tickLoop.stop();   // shutdownNow không chờ, nên không bị đứng máy
                 tickLoop = null;
             }
-            message = buildGameOverMessage();
-            gameOverMsg = new GameOverMessage(winnerId, getScores());
+            gameOverMsg = new GameOverMessage(winnerId, getScores(), getKills(), getDeaths());
         }
-        broadcast(gameOverMsg);
-        broadcast(message); // gửi mạng NGOÀI khóa
+        broadcast(gameOverMsg); // gửi mạng NGOÀI khóa
     }
 
     // Người thắng = người duy nhất còn xe sống. Nhiều hơn 1 hoặc không còn ai => hòa (null).
@@ -261,24 +363,14 @@ public class GameRoom {
         return found;
     }
 
-    // Tạm thời là chuỗi chữ đơn giản. Khi M1 xong protocol sẽ đổi sang Message/MessageCodec.
-    private String buildGameOverMessage() {
-        StringBuilder sb = new StringBuilder("GAME_OVER winner=" + (winnerId == null ? "none" : winnerId));
-        for (Map.Entry<String, Integer> e : scores.entrySet()) {
-            sb.append(" ").append(e.getKey()).append(":").append(e.getValue());
+    /** Lấy và xóa các âm thanh đã gom từ lần snapshot trước. Chỉ gọi trên thread tick. */
+    private List<String> drainSounds() {
+        if (pendingSounds.isEmpty()) {
+            return List.of();
         }
-        return sb.toString();
-    }
-
-    private String buildSnapshot() {
-        GameState gameState = engine.getGameState();
-        StringBuilder sb = new StringBuilder("STATE tick=" + tickCount);
-        for (Tank t : gameState.getTanks()) {
-            sb.append(" ").append(t.getId())
-                    .append("@").append((int) t.getPosition().x())
-                    .append(",").append((int) t.getPosition().y());
-        }
-        return sb.toString();
+        List<String> copy = new ArrayList<>(pendingSounds);
+        pendingSounds.clear();
+        return copy;
     }
 
     public SnapshotMessage buildBinarySnapshot() {
@@ -291,6 +383,8 @@ public class GameRoom {
                 starLevel = pt.getStarLevel();
                 shielded = pt.isShielded();
             }
+            int lives = (t instanceof PlayerTank p) ? p.getLives() : 1;
+            int score = (t instanceof PlayerTank p) ? p.getScore() : 0;
             tankSnapshots.add(new TankSnapshot(
                     t.getId(),
                     t.getPosition().x(),
@@ -301,8 +395,11 @@ public class GameRoom {
                     starLevel,
                     shielded,
                     t.isMoving(),
-                    t.isDestroyed()
+                    t.isDestroyed(),
+                    lives,
+                    score
             ));
+
         }
 
         List<BulletSnapshot> bulletSnapshots = new ArrayList<>();
@@ -316,12 +413,39 @@ public class GameRoom {
             ));
         }
 
+        // Vật phẩm đang nằm trên bản đồ: server tự chọn trường cần gửi (id, loại, vị trí)
+        List<PowerUpSnapshot> powerUpSnapshots = new ArrayList<>();
+        for (PowerUp p : gameState.getPowerUps()) {
+            powerUpSnapshots.add(new PowerUpSnapshot(
+                    p.getId(),
+                    p.getClass().getSimpleName(),
+                    p.getPosition().x(),
+                    p.getPosition().y()
+            ));
+        }
+
+        // Chỉ gửi tường gạch/thép chưa bị phá (có thể đổi trong ván). Nước, cây, băng không đổi nên không gửi.
+        List<EnvironmentSnapshot> environmentSnapshots = new ArrayList<>();
+        for (Environment env : gameState.getEnvironments()) {
+            if ((env instanceof BrickWall || env instanceof SteelWall) && !env.isDestroyed()) {
+                environmentSnapshots.add(new EnvironmentSnapshot(
+                        env.getId(),
+                        env.getClass().getSimpleName(),
+                        env.getPosition().x(),
+                        env.getPosition().y()
+                ));
+            }
+        }
+
         return new SnapshotMessage(
                 tickCount,
                 tankSnapshots,
                 bulletSnapshots,
                 state == RoomState.FINISHED,
-                winnerId
+                winnerId,
+                powerUpSnapshots,
+                environmentSnapshots,
+                drainSounds()
         );
     }
 
@@ -339,18 +463,57 @@ public class GameRoom {
         }
     }
 
-    private void broadcast(String message) {
-        // Copy danh sách dưới khóa rồi gửi NGOÀI khóa: gửi mạng có thể chậm.
-        List<ClientSession> copy;
-        synchronized (this) {
-            copy = new ArrayList<>(players);
-        }
-        for (ClientSession p : copy) {
-            try {
-                p.send(message);
-            } catch (Exception e) {
-                System.out.println("[GameRoom] Không gửi được cho " + p.getPlayerId());
+    // Gửi cho mọi người trong phòng: danh sách tên, chủ phòng và những ai đã READY
+    public synchronized void broadcastRoomState() {
+        List<String> playerNames = new ArrayList<>();
+
+        // Lấy danh sách playerId từ tất cả ClientSession trong phòng
+        for (ClientSession session : players) { // Hoặc danh sách lưu session người chơi của GameRoom
+            String name = session.getPlayerName();
+            // Lọc bỏ null hoặc chuỗi rỗng để tránh vỡ Codec
+            if (name != null && !name.isBlank()) {
+                playerNames.add(name);
+            } else {
+                playerNames.add(session.getPlayerId()); // Fallback về playerId nếu tên null
             }
         }
+
+        String hostId = playerNames.isEmpty() ? null : playerNames.get(0);
+
+        // Chuyển Set readyPlayers thành List để gửi đi (Set nên không bị lặp tên)
+        List<String> readyList = new ArrayList<>(readyPlayers);
+        // Broadcast bản tin RoomStateMessage (0x0E) tới mọi người chơi trong phòng
+        broadcast(new RoomStateMessage(getId(), playerNames, hostId, readyList));
+    }
+
+    public synchronized List<ClientSession> getPlayers() {
+        return new ArrayList<>(players);
+    }
+
+    public synchronized void setPlayerReady(String playerId, boolean ready) {
+        if (ready) {
+            readyPlayers.add(playerId);
+        } else {
+            readyPlayers.remove(playerId);
+        }
+    }
+
+    public synchronized boolean isPlayerReady(String playerId) {
+        return readyPlayers.contains(playerId);
+    }
+
+    // Kiểm tra xem tất cả Member (trừ Host - người đầu tiên) đã Ready chưa
+    public synchronized boolean areAllMembersReady() {
+        if (players.size() < MIN_PLAYERS_TO_START) {
+            return false;
+        }
+        // Host là người ở vị trí 0, kiểm tra từ vị trí 1 trở đi
+        for (int i = 1; i < players.size(); i++) {
+            ClientSession member = players.get(i);
+            if (!readyPlayers.contains(member.getPlayerName())) {
+                return false; // Có ít nhất 1 người chưa Ready
+            }
+        }
+        return true;
     }
 }

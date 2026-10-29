@@ -5,7 +5,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * "Nhịp tim" của 1 phòng: cứ mỗi 1/tickRate giây thì chạy 1 lần công việc (task).
+ * cứ mỗi 1/tickRate giây thì chạy 1 lần công việc (task).
  * Ví dụ tickRate = 30 => 30 lần mỗi giây => mỗi lần cách nhau khoảng 33 ms.
  */
 public class TickLoop {
@@ -25,7 +25,7 @@ public class TickLoop {
         long periodMicros = 1_000_000L / tickRate;
 
         executor.scheduleAtFixedRate(() -> {
-            // QUAN TRỌNG: nếu task ném lỗi mà không bắt, ScheduledExecutor sẽ DỪNG HẲN
+            //  nếu task ném lỗi mà không bắt, ScheduledExecutor sẽ DỪNG HẲN
             // vòng tick và không báo gì. Vì vậy phải try/catch ở đây.
             try {
                 task.run();

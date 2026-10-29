@@ -11,6 +11,15 @@ import tankops.server.net.ClientSession;
 
 class GameRoomTickTest {
 
+    // Từ khi có READY: mọi người trừ chủ phòng (người đầu tiên) phải READY thì mới START được
+    private static void ready(GameRoom room) {
+        java.util.List<tankops.server.net.ClientSession> ps = room.getPlayers();
+        for (int i = 1; i < ps.size(); i++) {
+            room.setPlayerReady(ps.get(i).getPlayerName(), true);
+        }
+    }
+
+
     // Chờ tối đa 2 giây cho đến khi điều kiện đúng (tránh test chạy chập chờn)
     private void waitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
         for (int i = 0; i < 200 && !condition.getAsBoolean(); i++) {
@@ -30,6 +39,7 @@ class GameRoomTickTest {
     @Test
     void startGame_tickCountIncreases() throws Exception {
         GameRoom room = roomWithTwoPlayers();
+        ready(room);
         room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         try {
             waitUntil(() -> room.getTickCount() >= 10);
@@ -43,6 +53,7 @@ class GameRoomTickTest {
     @Test
     void stopGame_tickStops() throws Exception {
         GameRoom room = roomWithTwoPlayers();
+        ready(room);
         room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         waitUntil(() -> room.getTickCount() >= 3);
         room.stopGame();
@@ -59,6 +70,7 @@ class GameRoomTickTest {
         ClientSession p = new ClientSession(null, null);
         room.addPlayer(p);
         room.addPlayer(new ClientSession(null, null));
+        ready(room);
         room.startGame(new MapLoader().loadMap("/maps/map_multi.map"), 30);
         try {
             Thread[] threads = new Thread[10];

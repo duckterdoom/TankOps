@@ -4,15 +4,37 @@ import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import tankops.common.model.common.Direction;
 
-public class InputHandler {
+public class  InputHandler {
     private boolean up, down, left, right;
     private boolean isShooting;
     private int mouseX, mouseY;
+    private Runnable onInputChanged = () -> { };
+    private java.awt.Window observedWindow;
+    private final java.awt.event.WindowFocusListener windowFocus = new java.awt.event.WindowAdapter() {
+        @Override public void windowLostFocus(java.awt.event.WindowEvent event) { clear(); }
+    };
+
+    public void clear() {
+        up = down = left = right = isShooting = false;
+        onInputChanged.run();
+    }
+
+    public void setOnInputChanged(Runnable listener) {
+        onInputChanged = listener != null ? listener : () -> { };
+    }
 
     public InputHandler(JComponent component) {
         setupKeyBindings(component);
         setupMouseListeners(component);
+        component.addHierarchyListener(event -> {
+            java.awt.Window window = SwingUtilities.getWindowAncestor(component);
+            if (window == observedWindow) return;
+            if (observedWindow != null) observedWindow.removeWindowFocusListener(windowFocus);
+            observedWindow = window;
+            if (window != null) window.addWindowFocusListener(windowFocus);
+        });
     }
 
     private void setupKeyBindings(JComponent component) {
@@ -29,20 +51,20 @@ public class InputHandler {
         keyBinding(inputMap, actionMap, "LEFT", "move_left", () -> left = true, () -> left = false);
         keyBinding(inputMap, actionMap, "RIGHT", "move_right", () -> right = true, () -> right = false);
 
-        keyBinding(inputMap, actionMap, "SPACE", "SHOOT", () -> isShooting = true, () -> isShooting = false);
+        keyBinding(inputMap, actionMap, "SPACE", "shoot", () -> isShooting = true, () -> isShooting = false);
     }
 
     private void keyBinding(InputMap im, ActionMap am, String key, String name, Runnable onPress, Runnable onRelease) {
         im.put(KeyStroke.getKeyStroke(key), name + "_press");
         am.put(name + "_press", new AbstractAction() {
             @Override
-            public void actionPerformed(ActionEvent e) {onPress.run();}
+            public void actionPerformed(ActionEvent e) {onPress.run(); onInputChanged.run();}
         });
 
         im.put(KeyStroke.getKeyStroke("released " + key), name + "_release");
         am.put(name + "_release", new AbstractAction() {
             @Override
-            public void actionPerformed(ActionEvent e) {onRelease.run();}
+            public void actionPerformed(ActionEvent e) {onRelease.run(); onInputChanged.run();}
         });
     }
 
@@ -63,16 +85,26 @@ public class InputHandler {
             @Override
             public void mousePressed(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1) isShooting = true;
+                onInputChanged.run();
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (e.getButton() == MouseEvent.BUTTON1) isShooting = false;
+                onInputChanged.run();
             }
         };
 
         component.addMouseListener(mouseAdapter);
         component.addMouseMotionListener(mouseAdapter);
+    }
+
+    public Direction getMovementDirection() {
+        if (up) return Direction.UP;
+        if (down) return Direction.DOWN;
+        if (left) return Direction.LEFT;
+        if (right) return Direction.RIGHT;
+        return null;
     }
 
     public boolean isUp() {return up;}

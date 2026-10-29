@@ -1,0 +1,202 @@
+package tankops.server.net;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import tankops.server.game.GameRoom;
+
+import org.junit.jupiter.api.Test;
+
+import tankops.common.model.common.Direction;
+import tankops.common.net.Message;
+import tankops.common.net.codec.MessageCodec;
+import tankops.common.net.game.InputMessage;
+import tankops.common.net.game.SnapshotMessage;
+import tankops.common.net.lobby.JoinResponseMessage;
+import tankops.common.net.lobby.JoinRoomMessage;
+import tankops.common.net.lobby.RoomInfo;
+import tankops.common.net.lobby.RoomListRequestMessage;
+import tankops.common.net.lobby.RoomListResponseMessage;
+import tankops.common.net.system.ChatMessage;
+
+// Test "đầu-cuối": server thật + client giả nói chuyện bằng đúng giao thức nhị phân của M1
+class ServerEndToEndTest {
+
+    @Test
+    void fivePlayersStart_sixthRefused_disconnectRemovesOnlyDepartedTank() throws Exception {
+        GameServer server = new GameServer();
+        List<FakeClient> clients = new ArrayList<>();
+        try (ServerSocket listener = new ServerSocket(0)) {
+            Thread acceptor = new Thread(new ConnectionAcceptor(listener, server));
+            acceptor.start();
+            try {
+                for (int i = 1; i <= 6; i++) {
+                    FakeClient client = new FakeClient(listener.getLocalPort());
+                    clients.add(client);
+                    client.send(new JoinRoomMessage("room-1", "Tail" + i));
+                    assertEquals(i <= 5, client.readUntil(JoinResponseMessage.class).success());
+                }
+                assertEquals(5, server.getRoomManager().getRoom("room-1").getPlayerCount());
+                for (int i = 1; i < 5; i++) {
+                    FakeClient member = clients.get(i);
+                    member.send(new ChatMessage("Tail" + (i + 1), "READY"));
+                    tankops.common.net.lobby.RoomStateMessage state;
+                    do {
+                        state = member.readUntil(tankops.common.net.lobby.RoomStateMessage.class);
+                    } while (!state.readyPlayerNames().contains("Tail" + (i + 1)));
+                }
+                clients.get(0).send(new ChatMessage("Tail1", "/start"));
+                for (int i = 0; i < 5; i++) {
+                    SnapshotMessage snapshot = clients.get(i).readUntil(SnapshotMessage.class);
+                    assertEquals(Set.of("Tail1", "Tail2", "Tail3", "Tail4", "Tail5"),
+                            snapshot.tanks().stream().map(t -> t.id()).collect(Collectors.toSet()));
+                }
+                clients.get(4).socket.close();
+                SnapshotMessage afterDisconnect;
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                do {
+                    assertTrue(System.nanoTime() < deadline, "Departed player's tank must be removed");
+                    afterDisconnect = clients.get(0).readUntil(SnapshotMessage.class);
+                } while (afterDisconnect.tanks().stream().anyMatch(t -> t.id().equals("Tail5")));
+                assertEquals(4, afterDisconnect.tanks().size());
+                assertTrue(!afterDisconnect.gameOver());
+            } finally {
+                for (FakeClient client : clients) client.socket.close();
+                server.getRoomManager().listRooms().forEach(GameRoom::stopGame);
+            }
+        }
+    }
+
+    // Client giả rất đơn giản: gửi tin, đọc tin
+    private static class FakeClient {
+        final Socket socket;
+        final DataInputStream in;
+        final DataOutputStream out;
+
+        FakeClient(int port) throws Exception {
+            socket = new Socket("localhost", port);
+            socket.setSoTimeout(5000); // đọc quá 5 giây không có gì thì báo lỗi, test không treo
+            in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+        }
+
+        void send(Message m) throws Exception {
+            MessageCodec.writeMessage(out, m);
+        }
+
+        Message read() throws Exception {
+            return MessageCodec.readMessage(in);
+        }
+
+        // Đọc cho tới khi gặp tin kiểu mong muốn (bỏ qua tin khác như snapshot)
+        <T extends Message> T readUntil(Class<T> type) throws Exception {
+            for (int i = 0; i < 500; i++) {
+                Message m = read();
+                if (type.isInstance(m)) {
+                    return type.cast(m);
+                }
+            }
+            throw new AssertionError("Không nhận được " + type.getSimpleName());
+        }
+    }
+
+    @Test
+    void lobby_join_start_snapshot_andShoot() throws Exception {
+        GameServer server = new GameServer();
+        ServerSocket ss = new ServerSocket(0, 500);
+        new Thread(new ConnectionAcceptor(ss, server)).start();
+        int port = ss.getLocalPort();
+        FakeClient a = null;
+        FakeClient b = null;
+        try {
+            a = new FakeClient(port);
+            b = new FakeClient(port);
+
+            // 1) Vừa vào lobby đã thấy 3 phòng chờ có sẵn
+            a.send(new RoomListRequestMessage("a"));
+            List<RoomInfo> rooms = a.readUntil(RoomListResponseMessage.class).rooms();
+            assertEquals(3, rooms.size());
+            assertEquals(5, rooms.get(0).maxPlayers());
+
+            // 2) A vào room-1, B vào "auto" -> cùng phòng room-1
+            a.send(new JoinRoomMessage("room-1", "A"));
+            JoinResponseMessage ra = a.readUntil(JoinResponseMessage.class);
+            assertTrue(ra.success());
+            assertEquals("room-1", ra.roomId());
+
+            b.send(new JoinRoomMessage("auto", "B"));
+            JoinResponseMessage rb = b.readUntil(JoinResponseMessage.class);
+            assertTrue(rb.success());
+            assertEquals("room-1", rb.roomId());
+
+            // 3) Phòng không tồn tại -> bị từ chối rõ ràng
+            FakeClient c = new FakeClient(port);
+            c.send(new JoinRoomMessage("room-99", "C"));
+            assertTrue(!c.readUntil(JoinResponseMessage.class).success());
+            c.socket.close();
+
+            // 4) B bấm READY (chờ server báo lại), rồi chủ phòng A gõ /start -> cả 2 nhận snapshot
+            b.send(new ChatMessage("B", "READY"));
+            tankops.common.net.lobby.RoomStateMessage st;
+            do {
+                st = b.readUntil(tankops.common.net.lobby.RoomStateMessage.class);
+            } while (!st.readyPlayerNames().contains("B"));
+            a.send(new ChatMessage("a", "/start"));
+            SnapshotMessage sa = a.readUntil(SnapshotMessage.class);
+            SnapshotMessage sb = b.readUntil(SnapshotMessage.class);
+            assertEquals(2, sa.tanks().size());
+            assertEquals(2, sb.tanks().size());
+
+            // 5) Gửi input bắn: server không được sập, vẫn tiếp tục gửi snapshot
+            a.send(new InputMessage(ra.assignedPlayerId(), 1, Direction.UP, true));
+            SnapshotMessage later = a.readUntil(SnapshotMessage.class);
+            assertTrue(later.tick() >= sa.tick());
+        } finally {
+            if (a != null) a.socket.close();
+            if (b != null) b.socket.close();
+            ss.close();
+            server.getRoomManager().listRooms().forEach(GameRoom::stopGame);
+        }
+    }
+
+    // Trùng tên trong phòng bị từ chối, và người bị từ chối không còn "dính" trong phòng
+    @Test
+    void duplicateName_refused_andNotLeftInRoom() throws Exception {
+        GameServer server = new GameServer();
+        ServerSocket ss = new ServerSocket(0, 500);
+        new Thread(new ConnectionAcceptor(ss, server)).start();
+        FakeClient a = null;
+        FakeClient b = null;
+        try {
+            a = new FakeClient(ss.getLocalPort());
+            b = new FakeClient(ss.getLocalPort());
+
+            a.send(new JoinRoomMessage("room-1", "An"));
+            assertTrue(a.readUntil(JoinResponseMessage.class).success());
+
+            b.send(new JoinRoomMessage("room-1", "an")); // trùng tên (không phân biệt hoa thường)
+            assertTrue(!b.readUntil(JoinResponseMessage.class).success());
+            assertEquals(1, server.getRoomManager().getRoom("room-1").getPlayerCount());
+
+            // Đổi tên rồi vào lại được
+            b.send(new JoinRoomMessage("room-1", "Binh"));
+            assertTrue(b.readUntil(JoinResponseMessage.class).success());
+            assertEquals(2, server.getRoomManager().getRoom("room-1").getPlayerCount());
+        } finally {
+            if (a != null) a.socket.close();
+            if (b != null) b.socket.close();
+            ss.close();
+        }
+    }
+}

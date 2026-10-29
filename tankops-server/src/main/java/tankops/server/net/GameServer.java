@@ -3,9 +3,14 @@ package tankops.server.net;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
+import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import tankops.common.map.GameMap;
+import tankops.common.map.MapLoader;
 import tankops.server.game.RoomManager;
 
 /**
@@ -16,6 +21,9 @@ public class GameServer {
     private int port;
     private int maxClients;
     private RoomManager roomManager;
+    private int tickRate;
+    private String multiMapPath;
+    private String bindAddress;
 
 
     // Danh sách client đang kết nối.
@@ -33,18 +41,31 @@ public class GameServer {
         props.load(in);
         in.close();
 
+        String configPath = System.getProperty("tankops.config");
+        if (configPath != null) {
+            try (InputStream external = Files.newInputStream(Path.of(configPath))) {
+                props.load(external);
+            }
+        }
+        bindAddress = System.getProperty("tankops.bindAddress", props.getProperty("server.bindAddress", "0.0.0.0"));
+
         port = Integer.parseInt(props.getProperty("server.port", "5555"));
         maxClients = Integer.parseInt(props.getProperty("server.maxClients", "100"));
 
         int maxPlayers = Integer.parseInt(props.getProperty("room.maxPlayers", "5"));
         int maxRooms = Integer.parseInt(props.getProperty("server.maxRooms", "10"));
-        roomManager = new RoomManager(maxRooms, maxPlayers);
+        tickRate = Integer.parseInt(props.getProperty("game.tickRate", "30"));
+        multiMapPath = props.getProperty("game.multiMap", "/maps/map_multi.map");
+
+        // Số phòng tạo sẵn khi mở server (cũng là số phòng chờ tối thiểu luôn được giữ)
+        int defaultRooms = Integer.parseInt(props.getProperty("server.defaultRooms", "3"));
+        roomManager = new RoomManager(maxRooms, maxPlayers, defaultRooms);
     }
 
     // Mở cổng và bật thread chuyên nhận kết nối mới
     public void start() throws IOException {
-        ServerSocket serverSocket = new ServerSocket(port);
-        System.out.println("[GameServer] Đang lắng nghe ở cổng " + port);
+        ServerSocket serverSocket = new ServerSocket(port, 50, InetAddress.getByName(bindAddress));
+        System.out.println("[GameServer] Đang lắng nghe tại " + bindAddress + ":" + serverSocket.getLocalPort());
 
         ConnectionAcceptor acceptor = new ConnectionAcceptor(serverSocket, this);
         new Thread(acceptor).start();
@@ -66,6 +87,15 @@ public class GameServer {
         return roomManager;
     }
 
+    public int getTickRate() {
+        return tickRate;
+    }
+
+    // Mỗi ván nạp bản đồ mới (engine sẽ sửa bản đồ trong lúc chơi, nên không dùng chung giữa các ván)
+    public GameMap loadMultiMap() {
+        return new MapLoader().loadMap(multiMapPath);
+    }
+
     public synchronized boolean isFull() {
         return sessions.size() >= maxClients;
     }
@@ -83,6 +113,14 @@ public class GameServer {
 
     public static void main(String[] args) throws IOException {
         GameServer server = new GameServer();
+        if (java.util.Arrays.asList(args).contains("--self-test")) {
+            GameMap map = server.loadMultiMap();
+            if (map == null || map.getPlayerSpawnPoints().size() < 2) {
+                throw new IOException("Multiplayer map is missing or has too few spawn points");
+            }
+            System.out.println("PASS: packaged server runtime, configuration and multiplayer map.");
+            return;
+        }
         server.start();
     }
 }

@@ -9,6 +9,7 @@ import tankops.common.net.lobby.LeaveRoomMessage;
 import tankops.common.net.lobby.RoomInfo;
 import tankops.common.net.lobby.RoomListRequestMessage;
 import tankops.common.net.lobby.RoomListResponseMessage;
+import tankops.common.net.lobby.RoomStateMessage;
 import tankops.common.net.support.NetworkTestSupport;
 
 import java.util.List;
@@ -68,5 +69,27 @@ class LobbyMessageRoundTripTest {
         assertEquals(2, decoded.rooms().size());
         assertEquals("room-1", decoded.rooms().get(0).roomId());
         assertEquals("PLAYING", decoded.rooms().get(1).state());
+    }
+
+    @Test
+    @DisplayName("0x0E: RoomStateMessage round-trip (danh sách người chơi, chủ phòng, người READY)")
+    void testRoomStateMessage() throws ProtocolException {
+        RoomStateMessage original = new RoomStateMessage(
+                "room-1", List.of("An", "Binh", "Chi"), "An", List.of("Binh"));
+        RoomStateMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals("room-1", decoded.roomId());
+        assertEquals(List.of("An", "Binh", "Chi"), decoded.playerNames());
+        assertEquals("An", decoded.hostId());
+        assertEquals(List.of("Binh"), decoded.readyPlayerNames());
+    }
+
+    @Test
+    @DisplayName("0x0E: RoomStateMessage khi không có chủ phòng và không ai READY")
+    void testRoomStateMessageEmptyReadyAndNoHost() throws ProtocolException {
+        RoomStateMessage original = new RoomStateMessage("room-2", List.of(), null, List.of());
+        RoomStateMessage decoded = NetworkTestSupport.assertRoundTrip(original);
+        assertEquals(0, decoded.playerNames().size());
+        assertEquals(null, decoded.hostId());
+        assertEquals(0, decoded.readyPlayerNames().size());
     }
 }

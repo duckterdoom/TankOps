@@ -22,6 +22,31 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Kiểm thử NetworkClient - Kết nối và truyền nhận bản tin")
 class NetworkClientTest {
 
+    @Test
+    void measuresApplicationRttUsingExistingPingProtocol() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread responder = new Thread(() -> {
+                try (Socket peer = server.accept()) {
+                    var input = new DataInputStream(peer.getInputStream());
+                    var output = new DataOutputStream(peer.getOutputStream());
+                    var ping = (tankops.common.net.system.PingMessage) MessageCodec.readMessage(input);
+                    MessageCodec.writeMessage(output, new tankops.common.net.system.PongMessage(ping.timestamp()));
+                    // Keep the peer alive until the client closes, so RTT is not cleared by disconnect.
+                    while (input.read() != -1) { }
+                } catch (Exception ignored) { }
+            });
+            responder.setDaemon(true);
+            responder.start();
+            NetworkClient client = NetworkClient.getInstance();
+            assertTrue(client.connect("127.0.0.1", server.getLocalPort()));
+            assertEquals(-1, client.getRoundTripMillis());
+            client.requestLatencySample();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (client.getRoundTripMillis() < 0 && System.nanoTime() < deadline) Thread.sleep(5);
+            assertTrue(client.getRoundTripMillis() >= 0, "expected a validated PONG sample");
+        }
+    }
+
     @AfterEach
     void tearDown() {
         NetworkClient.getInstance().disconnect();

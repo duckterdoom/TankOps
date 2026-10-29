@@ -12,8 +12,17 @@ import tankops.common.map.MapLoader;
 import tankops.common.model.tank.Tank;
 import tankops.server.net.ClientSession;
 
-/** T21: vòng đời phòng LOBBY -> PLAYING -> FINISHED và điểm số. */
+
 class RoomLifecycleTest {
+
+    // Từ khi có READY: mọi người trừ chủ phòng (người đầu tiên) phải READY thì mới START được
+    private static void ready(GameRoom room) {
+        java.util.List<tankops.server.net.ClientSession> ps = room.getPlayers();
+        for (int i = 1; i < ps.size(); i++) {
+            room.setPlayerReady(ps.get(i).getPlayerName(), true);
+        }
+    }
+
 
     private GameMap map() {
         return new MapLoader().loadMap("/maps/map_multi.map");
@@ -50,6 +59,7 @@ class RoomLifecycleTest {
         GameRoom room = new GameRoom("room-1", 5);
         room.addPlayer(fakePlayer());
         room.addPlayer(fakePlayer());
+        ready(room);
         room.startGame(map(), 30);
         try {
             assertEquals(RoomState.PLAYING, room.getState());
@@ -65,6 +75,7 @@ class RoomLifecycleTest {
         GameRoom room = new GameRoom("room-1", 5);
         room.addPlayer(fakePlayer());
         room.addPlayer(fakePlayer());
+        ready(room);
         room.startGame(map(), 30);
         try {
             assertThrows(IllegalStateException.class, () -> room.addPlayer(fakePlayer()));
@@ -80,6 +91,7 @@ class RoomLifecycleTest {
         GameRoom room = new GameRoom("room-1", 5);
         room.addPlayer(fakePlayer());
         room.addPlayer(fakePlayer());
+        ready(room);
         room.startGame(map(), 30);
 
         room.requestFinish();
@@ -102,6 +114,7 @@ class RoomLifecycleTest {
         ClientSession b = fakePlayer();
         room.addPlayer(a);
         room.addPlayer(b);
+        ready(room);
         room.startGame(map(), 30);
 
         // Giả lập xe của b bị hạ. Phải dùng takeDamage (như đạn thật), vì xe người chơi giờ có "mạng":
@@ -122,6 +135,7 @@ class RoomLifecycleTest {
         ClientSession b = fakePlayer();
         room.addPlayer(a);
         room.addPlayer(b);
+        ready(room);
         room.startGame(map(), 30);
 
         room.removePlayer(b);
@@ -137,6 +151,7 @@ class RoomLifecycleTest {
         ClientSession b = fakePlayer();
         room.addPlayer(a);
         room.addPlayer(b);
+        ready(room);
         room.startGame(map(), 30);
 
         room.removePlayer(a);
@@ -157,6 +172,7 @@ class RoomLifecycleTest {
         ClientSession b = fakePlayer();
         room.addPlayer(a);
         room.addPlayer(b);
+        ready(room);
         room.startGame(map(), 30);
         try {
             assertEquals(0, room.getScores().get(a.getPlayerId()));
@@ -180,6 +196,7 @@ class RoomLifecycleTest {
         ClientSession a = fakePlayer();
         room.addPlayer(a);
         room.addPlayer(fakePlayer());
+        ready(room);
         room.startGame(map(), 30);
         try {
             Thread[] threads = new Thread[20];

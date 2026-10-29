@@ -130,6 +130,25 @@ public final class MessageCodec {
     private static void writePayload(DataOutputStream out, Message msg)
             throws IOException, ProtocolException {
         switch (msg) {
+            case RoomStateMessage m -> {
+                out.writeUTF(m.roomId() != null ? m.roomId() : "");
+
+                // Ghi danh sách tên người chơi
+                List<String> names = m.playerNames() != null ? m.playerNames() : List.of();
+                out.writeInt(names.size());
+                for (String name : names) {
+                    out.writeUTF(name != null ? name : "Unknown");
+                }
+
+                out.writeUTF(m.hostId() != null ? m.hostId() : "");
+
+                // Ghi danh sách người chơi đã Ready
+                List<String> readyNames = m.readyPlayerNames() != null ? m.readyPlayerNames() : List.of();
+                out.writeInt(readyNames.size());
+                for (String readyName : readyNames) {
+                    out.writeUTF(readyName != null ? readyName : "Unknown");
+                }
+            }
             case JoinRoomMessage m -> {
                 out.writeUTF(m.roomId());
                 out.writeUTF(m.playerName());
@@ -179,7 +198,10 @@ public final class MessageCodec {
                     out.writeBoolean(t.shielded());
                     out.writeBoolean(t.moving());
                     out.writeBoolean(t.destroyed());
+                    out.writeInt(t.lives());
+                    out.writeInt(t.score());
                 }
+
                 out.writeInt(m.bullets().size());
                 for (BulletSnapshot b : m.bullets()) {
                     out.writeUTF(b.id());
@@ -188,11 +210,42 @@ public final class MessageCodec {
                     out.writeDouble(b.y());
                     writeDirection(out, b.direction());
                 }
+                // Vật phẩm đang nằm trên bản đồ
+                out.writeInt(m.powerUps().size());
+                for (PowerUpSnapshot p : m.powerUps()) {
+                    out.writeUTF(p.id());
+                    out.writeUTF(p.kind());
+                    out.writeDouble(p.x());
+                    out.writeDouble(p.y());
+                }
+                // Tường gạch/thép còn lại
+                out.writeInt(m.environments().size());
+                for (EnvironmentSnapshot e : m.environments()) {
+                    out.writeUTF(e.id());
+                    out.writeUTF(e.kind());
+                    out.writeDouble(e.x());
+                    out.writeDouble(e.y());
+                }
+                // Âm thanh phát sinh trong tick này
+                out.writeInt(m.sounds().size());
+                for (String sound : m.sounds()) {
+                    out.writeUTF(sound);
+                }
             }
             case GameOverMessage m -> {
                 out.writeUTF(m.winnerId() != null ? m.winnerId() : "");
                 out.writeInt(m.scores().size());
-                for (Map.Entry<String, Integer> e : m.scores().entrySet()) {
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.scores()).entrySet()) {
+                    out.writeUTF(e.getKey());
+                    out.writeInt(e.getValue());
+                }
+                out.writeInt(m.kills().size());
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.kills()).entrySet()) {
+                    out.writeUTF(e.getKey());
+                    out.writeInt(e.getValue());
+                }
+                out.writeInt(m.deaths().size());
+                for (Map.Entry<String, Integer> e : new java.util.TreeMap<>(m.deaths()).entrySet()) {
                     out.writeUTF(e.getKey());
                     out.writeInt(e.getValue());
                 }
@@ -224,6 +277,23 @@ public final class MessageCodec {
     private static Message readPayload(byte typeId, DataInputStream in)
             throws IOException, ProtocolException {
         return switch (typeId) {
+            case RoomStateMessage.TYPE_ID -> {
+                String rId = in.readUTF();
+                int nameCount = in.readInt();
+                List<String> names = new ArrayList<>(nameCount);
+                for (int i = 0; i < nameCount; i++) {
+                    names.add(in.readUTF());
+                }
+                String rawHost = in.readUTF();
+                String hostId = rawHost.isEmpty() ? null : rawHost;
+                // Đọc danh sách tên người chơi đã Ready
+                int readyCount = in.readInt();
+                List<String> readyNames = new ArrayList<>(readyCount);
+                for (int i = 0; i < readyCount; i++) {
+                    readyNames.add(in.readUTF());
+                }
+                yield new RoomStateMessage(rId, names, hostId, readyNames);
+            }
             case JoinRoomMessage.TYPE_ID ->
                 new JoinRoomMessage(in.readUTF(), in.readUTF());
 
@@ -264,11 +334,12 @@ public final class MessageCodec {
                 List<TankSnapshot> tanks = new ArrayList<>(tankCount);
                 for (int i = 0; i < tankCount; i++) {
                     tanks.add(new TankSnapshot(
-                        in.readUTF(),
-                        in.readDouble(), in.readDouble(),
-                        readDirection(in),
-                        in.readInt(), in.readInt(), in.readInt(),
-                        in.readBoolean(), in.readBoolean(), in.readBoolean()
+                            in.readUTF(),
+                            in.readDouble(), in.readDouble(),
+                            readDirection(in),
+                            in.readInt(), in.readInt(), in.readInt(),
+                            in.readBoolean(), in.readBoolean(), in.readBoolean(),
+                            in.readInt(), in.readInt()
                     ));
                 }
 
@@ -281,7 +352,27 @@ public final class MessageCodec {
                         readDirection(in)
                     ));
                 }
-                yield new SnapshotMessage(tick, tanks, bullets, over, winner);
+                int powerUpCount = in.readInt();
+                List<PowerUpSnapshot> powerUps = new ArrayList<>(powerUpCount);
+                for (int i = 0; i < powerUpCount; i++) {
+                    powerUps.add(new PowerUpSnapshot(
+                        in.readUTF(), in.readUTF(), in.readDouble(), in.readDouble()
+                    ));
+                }
+
+                int envCount = in.readInt();
+                List<EnvironmentSnapshot> envs = new ArrayList<>(envCount);
+                for (int i = 0; i < envCount; i++) {
+                    envs.add(new EnvironmentSnapshot(
+                        in.readUTF(), in.readUTF(), in.readDouble(), in.readDouble()
+                    ));
+                }
+                int soundCount = in.readInt();
+                List<String> sounds = new ArrayList<>(soundCount);
+                for (int i = 0; i < soundCount; i++) {
+                    sounds.add(in.readUTF());
+                }
+                yield new SnapshotMessage(tick, tanks, bullets, over, winner, powerUps, envs, sounds);
             }
 
             case GameOverMessage.TYPE_ID -> {
@@ -292,7 +383,17 @@ public final class MessageCodec {
                 for (int i = 0; i < scoreCount; i++) {
                     scores.put(in.readUTF(), in.readInt());
                 }
-                yield new GameOverMessage(winner, scores);
+                int killCount = in.readInt();
+                Map<String, Integer> kills = new LinkedHashMap<>(killCount);
+                for (int i = 0; i < killCount; i++) {
+                    kills.put(in.readUTF(), in.readInt());
+                }
+                int deathCount = in.readInt();
+                Map<String, Integer> deaths = new LinkedHashMap<>(deathCount);
+                for (int i = 0; i < deathCount; i++) {
+                    deaths.put(in.readUTF(), in.readInt());
+                }
+                yield new GameOverMessage(winner, scores, kills, deaths);
             }
 
             case EventMessage.TYPE_ID -> {

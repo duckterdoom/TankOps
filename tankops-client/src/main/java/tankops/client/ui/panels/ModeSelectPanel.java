@@ -34,6 +34,7 @@ public class ModeSelectPanel extends JPanel {
         add(botButton, gbc);
 
         JButton multiButton = createStyledButton("Multiplayer", new Color(46, 139, 87));
+        JButton backButton = createStyledButton("Logout", new Color(178, 34, 34));
         multiButton.addActionListener(e -> {
             String address = ClientConfig.getServerAddress();
             if (address == null || address.trim().isEmpty()) {
@@ -44,31 +45,57 @@ public class ModeSelectPanel extends JPanel {
                 return;
             }
 
-            boolean connected = NetworkClient.getInstance().connect(
-                    ClientConfig.getHost(),
-                    ClientConfig.getPort()
-            );
+            final String host = ClientConfig.getHost();
+            final int port = ClientConfig.getPort();
+            multiButton.setEnabled(false);
+            multiButton.setText("Connecting...");
+            botButton.setEnabled(false);
+            backButton.setEnabled(false);
+            new SwingWorker<Boolean, Void>() {
+                @Override
+                protected Boolean doInBackground() {
+                    return NetworkClient.getInstance().connect(host, port);
+                }
 
-            if (connected) {
-                mainFrame.showScreen(ScreenState.LOBBY);
-            } else {
-                JOptionPane.showMessageDialog(this,
-                        "Could not connect to Server at: " + ClientConfig.getServerAddress() + "\nPlease check if server is running!",
-                        "Connection error",
-                        JOptionPane.ERROR_MESSAGE);
-            }
+                @Override
+                protected void done() {
+                    multiButton.setEnabled(true);
+                    multiButton.setText("Multiplayer");
+                    botButton.setEnabled(true);
+                    backButton.setEnabled(true);
+                    try {
+                        if (get()) {
+                            mainFrame.showScreen(ScreenState.LOBBY);
+                        } else {
+                            showConnectionError(host + ":" + port);
+                        }
+                    } catch (Exception error) {
+                        showConnectionError(host + ":" + port);
+                    }
+                }
+            }.execute();
 
 
         });
         gbc.gridy = 2;
         add(multiButton, gbc);
 
-        JButton backButton = createStyledButton("Logout", new Color(178, 34, 34));
         backButton.addActionListener(e -> {
+            NetworkClient.getInstance().disconnect();
             mainFrame.showScreen(ScreenState.LOGIN);
         });
         gbc.gridy = 3;
         add(backButton, gbc);
+    }
+
+    private void showConnectionError(String address) {
+        JOptionPane.showMessageDialog(this,
+                "Không kết nối được " + address + "\n"
+                + "1. Bật Tailscale và đăng nhập trên máy này.\n"
+                + "2. Chấp nhận lời mời chia sẻ Ubuntu server.\n"
+                + "3. Kiểm tra server đang chạy và địa chỉ/cổng đã nhập.\n"
+                + "Chọn Logout để sửa địa chỉ.",
+                "Kết nối server", JOptionPane.ERROR_MESSAGE);
     }
 
     private JButton createStyledButton(String text, Color bgColor) {
