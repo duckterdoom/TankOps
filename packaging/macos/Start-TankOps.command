@@ -12,9 +12,15 @@ fail() {
 [[ "$(uname -s)" == Darwin ]] || fail 'This launcher is for macOS.'
 [[ -f "$script_dir/TankOps.jar" ]] || fail 'TankOps.jar is missing. Extract the entire ZIP first.'
 java_bin=''
+# Ignore JVM options inherited from a different application/JDK.
+unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS
 if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
-    java_bin="$JAVA_HOME/bin/java"
-elif java_home=$(/usr/libexec/java_home -v 21+ 2>/dev/null); then
+    candidate_version=$("$JAVA_HOME/bin/java" -version 2>&1) || candidate_version=''
+    if [[ "$candidate_version" =~ version\ \"([0-9]+) ]] && (( BASH_REMATCH[1] >= 21 )); then
+        java_bin="$JAVA_HOME/bin/java"
+    fi
+fi
+if [[ -z "$java_bin" ]] && java_home=$(/usr/libexec/java_home -v 21+ 2>/dev/null); then
     java_bin="$java_home/bin/java"
 fi
 [[ -n "$java_bin" ]] || fail 'Install Java 21 or newer for your Mac first (Temurin JDK 21).'
