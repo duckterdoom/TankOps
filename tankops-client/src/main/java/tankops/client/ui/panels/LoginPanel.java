@@ -3,6 +3,7 @@ package tankops.client.ui.panels;
 import tankops.client.state.ClientConfig;
 import tankops.client.ui.MainFrame;
 import tankops.client.ui.ScreenState;
+import tankops.client.ui.dialogs.InstructionDialog;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -40,6 +41,15 @@ public class LoginPanel extends JPanel {
         loginBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         loginBtn.setPreferredSize(new Dimension(200, 40));
 
+        // How to play button
+        JButton helpBtn = new JButton("HOW TO PLAY");
+        helpBtn.setFont(new Font("Arial", Font.BOLD, 13));
+        helpBtn.setForeground(Color.WHITE);
+        helpBtn.setBackground(new Color(60, 60, 75));
+        helpBtn.setFocusPainted(false);
+        helpBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        helpBtn.setPreferredSize(new Dimension(200, 35));
+
         loginBtn.addActionListener(e -> {
             String username = nameField.getText().trim();
             String serverAdd = hostField.getText().trim();
@@ -65,6 +75,12 @@ public class LoginPanel extends JPanel {
             mainFrame.showScreen(ScreenState.MODE_SELECT);
         });
 
+        helpBtn.addActionListener(e -> {
+            Frame parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+            InstructionDialog dialog = new InstructionDialog(parentFrame);
+            dialog.setVisible(true);
+        });
+
         gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
         add(titleLabel, gbc);
 
@@ -80,6 +96,9 @@ public class LoginPanel extends JPanel {
 
         gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
         add(loginBtn, gbc);
+
+        gbc.gridy = 5;
+        add(helpBtn, gbc);
     }
 
     private JLabel createLabel(String text) {
