@@ -28,9 +28,7 @@ import tankops.common.net.lobby.RoomStateMessage;
 import tankops.server.net.ClientSession;
 
 /**
- * Một phòng chơi: danh sách người chơi (T10) + vòng tick (T15) + vòng đời và điểm số (T21).
- *
- * QUY TẮC VÀNG (single-writer): chỉ có thread của TickLoop được gọi GameEngine.
+ * (single-writer): chỉ có thread của TickLoop được gọi GameEngine.
  * Các thread socket chỉ BỎ LỆNH vào hàng đợi (submitMove, submitShoot) hoặc bật cờ (requestFinish).
  */
 public class GameRoom {
@@ -45,7 +43,7 @@ public class GameRoom {
     private final List<ClientSession> players = new ArrayList<>();
     private final java.util.Set<String> readyPlayers = new java.util.HashSet<>();
 
-    // ---- T21: vòng đời + điểm ----
+    //  vòng đời
     // volatile: thread tick đọc được ngay giá trị mới nhất. Việc GHI luôn nằm trong synchronized.
     private volatile RoomState state = RoomState.LOBBY;
     private volatile boolean finishRequested = false; // thread khác bật cờ này để xin kết thúc ván
@@ -56,7 +54,7 @@ public class GameRoom {
     private final List<String> pendingSounds = new ArrayList<>(); // âm thanh chờ gửi, chỉ thread tick đụng vào
     private String winnerId = null; // null = chưa xong hoặc hòa
 
-    // ---- T15: tick ----
+    // tick
     private final ConcurrentLinkedQueue<InputCommand> inputQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<String> departedPlayers = new ConcurrentLinkedQueue<>();
     private GameEngine engine;          // chỉ thread tick được đụng vào
@@ -79,7 +77,7 @@ public class GameRoom {
         return maxPlayers;
     }
 
-    // ================= Danh sách người chơi (T10) =================
+    //  Danh sách người chơi
 
     // Chỉ cho vào khi phòng còn ở LOBBY. Phòng đã PLAYING/FINISHED thì từ chối.
     // synchronized: "kiểm tra trạng thái + kiểm tra chỗ + thêm người" là một khối không bị chen ngang.
@@ -141,13 +139,13 @@ public class GameRoom {
         return players.isEmpty();
     }
 
-    // ================= Vòng đời (T21) =================
+    //  Vòng đời
 
     public RoomState getState() {
         return state;
     }
 
-    /** LOBBY -> PLAYING: tạo engine, đặt xe cho người chơi thật (không bot), chạy vòng tick. */
+    /** LOBBY -> PLAYING: tạo engine, đặt xe cho người chơi thật, chạy vòng tick. */
     public synchronized void startGame(GameMap map, int tickRate) {
         if (state != RoomState.LOBBY) {
             throw new IllegalStateException("Phòng " + id + " không ở trạng thái LOBBY");
@@ -202,16 +200,16 @@ public class GameRoom {
     }
 
     /**
-     * Thread socket (hoặc ai cũng được) gọi hàm này để xin kết thúc ván.
+     * Thread socket gọi hàm này để xin kết thúc ván.
      * Chỉ bật cờ. Thread tick sẽ tự thấy và kết thúc, vì chỉ thread tick được đọc engine.
      */
     public void requestFinish() {
         finishRequested = true;
     }
 
-    // ================= Điểm số (T21) =================
+    //  Điểm số
 
-    /** Cộng điểm cho 1 người. (Sau này M3 báo "A hạ B" thì gọi addKill.) */
+    /** Cộng điểm cho 1 người.  */
     public synchronized void addScore(String playerId, int points) {
         scores.merge(playerId, points, Integer::sum);
     }
@@ -223,7 +221,7 @@ public class GameRoom {
         addScore(killerId, KILL_POINTS);
     }
 
-    // Trả về BẢN SAO để bên ngoài không sửa trực tiếp vào bảng điểm thật
+    // Trả về bản sao để bên ngoài không sửa trực tiếp vào bảng điểm thật
     public synchronized Map<String, Integer> getKills() {
         return new LinkedHashMap<>(kills);
     }
@@ -240,7 +238,7 @@ public class GameRoom {
         return winnerId;
     }
 
-    // ================= Tick (T15) =================
+    // Tick
 
     /** Thread socket gọi khi nhận lệnh của client. Chỉ bỏ vào hàng đợi, KHÔNG đụng engine. */
     public void submitMove(String playerId, Direction direction) {

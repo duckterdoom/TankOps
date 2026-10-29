@@ -12,7 +12,7 @@ import tankops.common.map.MapLoader;
 import tankops.common.model.tank.Tank;
 import tankops.server.net.ClientSession;
 
-/** T21: vòng đời phòng LOBBY -> PLAYING -> FINISHED và điểm số. */
+
 class RoomLifecycleTest {
 
     // Từ khi có READY: mọi người trừ chủ phòng (người đầu tiên) phải READY thì mới START được
