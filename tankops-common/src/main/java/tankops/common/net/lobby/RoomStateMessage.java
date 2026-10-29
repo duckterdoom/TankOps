@@ -6,7 +6,7 @@ import java.util.Objects;
 
 /**
  * Server -> All Clients in Room: Cập nhật danh sách người chơi thực tế trong phòng.
- * Type ID: 0x06
+ * Type ID: 0x0E
  */
 public record RoomStateMessage(
         String roomId,
