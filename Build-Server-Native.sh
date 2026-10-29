@@ -16,7 +16,8 @@ modules=$("$jdk/bin/jdeps" --print-module-deps "$bundle/tankops-server.jar")
 "$jdk/bin/jlink" --module-path "$jdk/jmods" --add-modules "$modules" \
     --strip-debug --no-header-files --no-man-pages --output "$bundle/runtime"
 cp "$project_root/deploy/ubuntu/"* "$bundle/"
-cp "$project_root/docs/RELEASE_VALIDATION.md" "$bundle/HUONG-DAN.md"
+sed -e 's|](README.md)|](HUONG-DAN.md)|g' -e 's|](docs/protocol.md)|](protocol.md)|g' "$project_root/SYSTEM_ANALYSIS.md" > "$bundle/HUONG-DAN.md"
+sed 's|](../SYSTEM_ANALYSIS.md)|](HUONG-DAN.md)|g' "$project_root/docs/protocol.md" > "$bundle/protocol.md"
 env -u JAVA_HOME -u JAVA_TOOL_OPTIONS -u _JAVA_OPTIONS -u JDK_JAVA_OPTIONS \
     PATH=/usr/bin:/bin "$bundle/runtime/bin/java" "-Dtankops.config=$bundle/config.properties" \
     -jar "$bundle/tankops-server.jar" --self-test
