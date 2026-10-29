@@ -75,11 +75,7 @@ try {
         /reference:System.Windows.Forms.dll "/resource:$payload,TankOps.Payload.zip" `
         "/out:$singleExe" (Join-Path $projectRoot 'packaging\windows\Launcher.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Creating the single-file launcher failed.' }
-    $probe = Start-Process -FilePath $singleExe -ArgumentList '--diagnose' -WindowStyle Hidden -PassThru
-    try {
-        if (-not $probe.WaitForExit(60000)) { $probe.Kill(); throw 'Final EXE self-test timed out.' }
-        if ($probe.ExitCode -ne 0) { throw 'Final EXE self-test failed. Check %LOCALAPPDATA%\TankOps\logs.' }
-    } finally { $probe.Dispose() }
+    & (Join-Path $projectRoot 'packaging\windows\Test-Executable.ps1') -Executable $singleExe
     $destination = Join-Path $projectRoot 'TankOps.exe'
     Copy-Item -LiteralPath $singleExe -Destination $destination -Force
     Write-Host "Ready: $destination (single file, bundled Java)"
