@@ -13,6 +13,7 @@ public class InstructionDialog extends JDialog {
 
     public InstructionDialog(Frame owner) {
         super(owner, "HOW TO PLAY - TANKOPS", true);
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
         setSize(650, 520);
         setLocationRelativeTo(owner);
@@ -75,7 +76,7 @@ public class InstructionDialog extends JDialog {
 
         panel.add(createRowItem(spriteManager.getSprite("powerup_helmet"), "Helmet:", "Grants temporary Cyan invincibility shield"));
         panel.add(createRowItem(spriteManager.getSprite("powerup_grenade"), "Grenade:", "Instantly destroys all active enemy tanks"));
-        panel.add(createRowItem(spriteManager.getSprite("powerup_star"), "Star:", "Upgrades tank (Increases speed & fire rate)"));
+        panel.add(createRowItem(spriteManager.getSprite("powerup_star"), "Star:", "Upgrades bullets: speed, capacity, then steel damage"));
         panel.add(createRowItem(spriteManager.getSprite("powerup_tank"), "Tank (+1):", "Grants +1 Extra Life (LIVE)"));
         panel.add(createRowItem(spriteManager.getSprite("powerup_timer"), "Timer:", "Freezes all enemy tanks temporarily"));
         panel.add(createRowItem(spriteManager.getSprite("powerup_shovel"), "Shovel:", "Reinforces base walls into steel walls"));
@@ -89,7 +90,7 @@ public class InstructionDialog extends JDialog {
         panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
         panel.add(createRowItem(spriteManager.getSprite("brick_full"), "Brick Wall:", "Destructible by bullet fire"));
-        panel.add(createRowItem(spriteManager.getSprite("steel_full"), "Steel Wall:", "Indestructible concrete armor"));
+        panel.add(createRowItem(spriteManager.getSprite("steel_full"), "Steel Wall:", "Resists normal bullets; vulnerable at 3 Stars"));
         panel.add(createRowItem(spriteManager.getSprite("water_f0"), "Water:", "Tanks cannot cross; bullets pass over"));
         panel.add(createRowItem(spriteManager.getSprite("trees"), "Trees:", "Provides visual cover for tanks"));
         panel.add(createRowItem(spriteManager.getSprite("ice"), "Ice:", "Causes tanks to slide when moving"));
@@ -116,8 +117,8 @@ public class InstructionDialog extends JDialog {
                         "   - Game Over: Runs out of lives (LIVES = 0) or base gets destroyed.\n\n" +
                         "2. MULTIPLAYER MODE:\n" +
                         "   - Lobby: Join a room; all Members must click READY for Host to start.\n" +
-                        "   - Scoring: Gain +100 SCORE per enemy tank hit.\n" +
-                        "   - Victory: The last surviving player/team on the battlefield wins (WINNER)!"
+                        "   - Scoring: Gain +100 SCORE per enemy tank destroyed.\n" +
+                        "   - Victory: The last surviving player wins. No survivors means a draw."
         );
 
         panel.add(area);
@@ -125,16 +126,18 @@ public class InstructionDialog extends JDialog {
     }
 
     private JPanel createRowItem(BufferedImage icon, String title, String desc) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+        JPanel row = new JPanel(new BorderLayout(10, 2));
         row.setOpaque(false);
+        JPanel labelPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 2));
+        labelPanel.setOpaque(false);
 
         if (icon != null) {
             JLabel iconLabel = new JLabel(new ImageIcon(icon));
-            row.add(iconLabel);
+            labelPanel.add(iconLabel);
         } else {
             JLabel spacer = new JLabel();
             spacer.setPreferredSize(new Dimension(32, 32));
-            row.add(spacer);
+            labelPanel.add(spacer);
         }
 
         JLabel titleLbl = new JLabel(title);
@@ -142,12 +145,18 @@ public class InstructionDialog extends JDialog {
         titleLbl.setForeground(new Color(240, 190, 40));
         titleLbl.setPreferredSize(new Dimension(130, 30));
 
-        JLabel descLbl = new JLabel(desc);
+        JTextArea descLbl = new JTextArea(desc);
+        descLbl.setEditable(false);
+        descLbl.setFocusable(false);
+        descLbl.setOpaque(false);
+        descLbl.setLineWrap(true);
+        descLbl.setWrapStyleWord(true);
         descLbl.setFont(new Font("Arial", Font.PLAIN, 12));
         descLbl.setForeground(Color.WHITE);
 
-        row.add(titleLbl);
-        row.add(descLbl);
+        labelPanel.add(titleLbl);
+        row.add(labelPanel, BorderLayout.WEST);
+        row.add(descLbl, BorderLayout.CENTER);
 
         return row;
     }

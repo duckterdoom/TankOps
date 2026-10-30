@@ -29,7 +29,7 @@ try {
         $content = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n")
         [IO.File]::WriteAllText((Join-Path $bundle $file.Name), $content, $utf8)
     }
-    $guide = [IO.File]::ReadAllText((Join-Path $projectRoot 'SYSTEM_ANALYSIS.md')).Replace('](README.md)', '](HUONG-DAN.md)').Replace('](docs/protocol.md)', '](protocol.md)')
+    $guide = [IO.File]::ReadAllText((Join-Path $projectRoot 'docs\SYSTEM_ANALYSIS.md')).Replace('](README.md)', '](HUONG-DAN.md)').Replace('](../README.md)', '](HUONG-DAN.md)').Replace('](docs/protocol.md)', '](protocol.md)')
     [IO.File]::WriteAllText((Join-Path $bundle 'HUONG-DAN.md'), $guide, $utf8)
     $wireGuide = [IO.File]::ReadAllText((Join-Path $projectRoot 'docs\protocol.md')).Replace('](../SYSTEM_ANALYSIS.md)', '](HUONG-DAN.md)')
     [IO.File]::WriteAllText((Join-Path $bundle 'protocol.md'), $wireGuide, $utf8)

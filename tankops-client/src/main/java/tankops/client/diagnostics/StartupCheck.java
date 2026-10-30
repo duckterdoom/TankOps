@@ -5,6 +5,7 @@ import javax.imageio.ImageIO;
 import javax.sound.sampled.AudioSystem;
 import javax.swing.SwingUtilities;
 import tankops.client.ui.MainFrame;
+import tankops.client.ui.dialogs.InstructionDialog;
 import tankops.common.map.MapLoader;
 import tankops.common.net.codec.MessageCodec;
 import tankops.common.net.system.PingMessage;
@@ -38,9 +39,25 @@ public final class StartupCheck {
             // No frame is shown and no match is started.
             SwingUtilities.invokeAndWait(() -> {
                 MainFrame frame = new MainFrame();
-                frame.dispose();
+                try {
+                    InstructionDialog guide = new InstructionDialog(frame);
+                    try {
+                        // Exercise every help tab using the runtime and assets being shipped.
+                        var tabs = (javax.swing.JTabbedPane) ((java.awt.BorderLayout)
+                                guide.getContentPane().getLayout()).getLayoutComponent(java.awt.BorderLayout.CENTER);
+                        if (tabs.getTabCount() != 4) throw new IllegalStateException("Missing gameplay guide tabs");
+                        for (int i = 0; i < tabs.getTabCount(); i++) {
+                            tabs.setSelectedIndex(i);
+                            guide.validate();
+                        }
+                    } finally {
+                        guide.dispose();
+                    }
+                } finally {
+                    frame.dispose();
+                }
             });
-            System.out.println("PASS: packaged Java, maps, image/audio decoding, protocol and Swing startup.");
+            System.out.println("PASS: packaged Java, maps, image/audio decoding, protocol, Swing startup and gameplay guide.");
             return 0;
         } catch (Throwable failure) {
             failure.printStackTrace();
